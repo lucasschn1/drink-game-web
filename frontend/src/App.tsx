@@ -88,6 +88,17 @@ export default function App() {
       .finally(() => setInitialLoading(false));
   }, []);
 
+  // Shared by both the regular poll below and the shot-timer's early
+  // zero-crossing fetch — fire-and-forget, silently ignores transient
+  // failures since both callers just want "try to catch up on the next
+  // opportunity" rather than surfacing a network blip as a user-facing error.
+  function refreshMatch(code: string) {
+    api
+      .getMatch(code)
+      .then(setMatch)
+      .catch(() => {});
+  }
+
   // Multiplayer sync: every device polls the same match state, so everyone's
   // screen reflects whoever's action actually happened (not just this
   // device's own). Paused while a mutation from this device is in flight,
@@ -97,14 +108,7 @@ export default function App() {
   useEffect(() => {
     if (!match || loading || gameMode === "local" || (screen !== "players" && screen !== "game")) return;
     const code = match.code;
-    const interval = setInterval(() => {
-      api
-        .getMatch(code)
-        .then(setMatch)
-        .catch(() => {
-          /* transient poll failure — try again next tick */
-        });
-    }, POLL_INTERVAL_MS);
+    const interval = setInterval(() => refreshMatch(code), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [screen, match?.code, loading, gameMode]);
 
@@ -141,13 +145,29 @@ export default function App() {
     setDisplaySeconds(match?.shotTimer.remainingSeconds ?? null);
   }, [match?.shotTimer.remainingSeconds]);
 
+  // Every device runs this same countdown, regardless of whose turn it is or
+  // whether the current card has been flipped — the shot alert isn't tied to
+  // either. The moment a device's own clock reaches zero, it asks the server
+  // immediately instead of waiting for the next scheduled poll tick (up to
+  // POLL_INTERVAL_MS away): maybeTriggerShotTimer runs as a side effect of
+  // any GET, so whichever client notices first is the one that actually
+  // flips pendingShotPlayerId. Every other client still only sees it on
+  // their next regular poll, but this shaves that worst case down
+  // dramatically instead of every client independently waiting the full
+  // interval.
   useEffect(() => {
     if (screen !== "game" || match?.status !== "IN_PROGRESS" || match?.shotTimer.pendingPlayer) return;
+    const code = match.code;
     const interval = setInterval(() => {
-      setDisplaySeconds((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+      setDisplaySeconds((prev) => {
+        if (prev === null || prev <= 0) return prev; // already at zero — wait for the poll, don't refetch every tick
+        const next = prev - 1;
+        if (next <= 0) refreshMatch(code);
+        return next;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [screen, match?.status, match?.shotTimer.pendingPlayer]);
+  }, [screen, match?.status, match?.shotTimer.pendingPlayer, match?.code]);
 
   async function handleDismissShot() {
     if (!match) return;

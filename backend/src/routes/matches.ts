@@ -403,11 +403,16 @@ matchesRouter.post(
   }),
 );
 
-// POST /api/matches/:code/kick — host removes a player. Before the match
-// starts this is a plain removal; mid-match it also has to re-densify
-// everyone's turnOrder (kept contiguous from 0 since /join and /advance both
-// assume that) and shift currentPlayerIndex so the same *player* stays "up"
-// after the removal, not just the same numeric slot.
+type KickOutcome = "not_found" | "forbidden" | "finished" | "player_not_found" | "too_few_players" | "ok";
+
+// POST /api/matches/:code/kick — host removes a player. Locks the Match row
+// for the same reason /reveal does: a concurrent /advance or second /kick
+// between reading currentPlayerIndex and writing the removal could otherwise
+// invalidate the turn math mid-request. Before the match starts this is a
+// plain removal; mid-match it also has to re-densify everyone's turnOrder
+// (kept contiguous from 0 since /join and /advance both assume that) and
+// hand the turn to whoever the removed player's *successor* was — the same
+// player, not just the same numeric slot.
 matchesRouter.post(
   "/:code/kick",
   asyncHandler(async (req, res) => {
@@ -415,44 +420,59 @@ matchesRouter.post(
     const token = getToken(req);
     const playerId = Number(req.body?.playerId);
 
-    const match = await prisma.match.findUnique({
-      where: { id: code },
-      include: { players: { orderBy: { turnOrder: "asc" } } },
-    });
-    if (!match) return res.status(404).json({ error: "Match not found" });
-    if (!token || !match.hostToken || token !== match.hostToken) {
-      return res.status(403).json({ error: "Only the host can remove a player" });
-    }
-    if (match.status === "FINISHED") return res.status(409).json({ error: "Match already finished" });
+    const outcome = await prisma.$transaction<KickOutcome>(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { status: string; hostToken: string | null; currentPlayerIndex: number }[]
+      >`
+        SELECT status, hostToken, currentPlayerIndex FROM \`Match\` WHERE id = ${code} FOR UPDATE
+      `;
+      const locked = rows[0];
+      if (!locked) return "not_found";
+      if (!token || !locked.hostToken || token !== locked.hostToken) return "forbidden";
+      if (locked.status === "FINISHED") return "finished";
 
-    const target = match.players.find((p) => p.id === playerId);
-    if (!target) return res.status(404).json({ error: "Player not found" });
+      const players = await tx.player.findMany({ where: { matchId: code }, orderBy: { turnOrder: "asc" } });
+      const target = players.find((p) => p.id === playerId);
+      if (!target) return "player_not_found";
 
-    const remaining = match.players.filter((p) => p.id !== playerId);
-    if (match.status === "IN_PROGRESS" && remaining.length < 2) {
-      return res.status(400).json({ error: "Can't remove — the match needs at least 2 players" });
-    }
+      const remaining = players.filter((p) => p.id !== playerId);
+      if (locked.status === "IN_PROGRESS" && remaining.length < 2) return "too_few_players";
 
-    const wasCurrent = match.status === "IN_PROGRESS" && target.turnOrder === match.currentPlayerIndex;
-    let nextIndex = match.currentPlayerIndex;
-    if (match.status === "IN_PROGRESS" && target.turnOrder < match.currentPlayerIndex) nextIndex -= 1;
-    if (remaining.length > 0) nextIndex = ((nextIndex % remaining.length) + remaining.length) % remaining.length;
+      const wasCurrent = target.id === players[locked.currentPlayerIndex]?.id;
 
-    await prisma.$transaction(async (tx) => {
       await tx.player.delete({ where: { id: playerId } });
-      // Re-densify turnOrder in original relative order — safe to do as
-      // sequential updates because each new index is always <= the old one,
-      // so a target slot is never still occupied by a not-yet-updated row.
+      // Re-densify turnOrder in original relative order — safe as sequential
+      // updates because each new index is always <= the old one, so a
+      // target slot is never still occupied by a not-yet-updated row.
       for (let i = 0; i < remaining.length; i++) {
         await tx.player.update({ where: { id: remaining[i].id }, data: { turnOrder: i } });
       }
-      if (match.status === "IN_PROGRESS") {
+
+      if (locked.status === "IN_PROGRESS") {
+        // Whoever should be "up" now is the same *player* as before: the
+        // removed one's successor if they were current, otherwise unchanged.
+        const successorId = players[(locked.currentPlayerIndex + 1) % players.length]?.id;
+        const nextCurrentId = wasCurrent ? successorId : players[locked.currentPlayerIndex]?.id;
+        const nextIndex = Math.max(
+          0,
+          remaining.findIndex((p) => p.id === nextCurrentId),
+        );
         await tx.match.update({
           where: { id: code },
           data: { currentPlayerIndex: nextIndex, ...(wasCurrent ? { revealedCardId: null } : {}) },
         });
       }
+
+      return "ok";
     });
+
+    if (outcome === "not_found") return res.status(404).json({ error: "Match not found" });
+    if (outcome === "forbidden") return res.status(403).json({ error: "Only the host can remove a player" });
+    if (outcome === "finished") return res.status(409).json({ error: "Match already finished" });
+    if (outcome === "player_not_found") return res.status(404).json({ error: "Player not found" });
+    if (outcome === "too_few_players") {
+      return res.status(400).json({ error: "Can't remove — the match needs at least 2 players" });
+    }
 
     const state = await loadMatchState(code);
     res.json(state);

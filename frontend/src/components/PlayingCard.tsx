@@ -31,25 +31,90 @@ function SuitIcon({ suit, className }: { suit: Suit; className?: string }) {
   );
 }
 
-// Heraldic shield + gem, for the card back — gives it "deck of cards" weight
-// instead of a bare wordmark.
+// Heraldic shield + chalice + crown, for the card back — a tavern coat-of-arms
+// instead of a bare wordmark. Cream lines on the ink field, one ruby jewel
+// accent (reuses --suit-hearts, already part of the palette).
 function CrestEmblem({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 120" className={className} aria-hidden="true">
+      {/* laurel sprigs flanking the base */}
       <path
-        d="M50 6 L90 20 L90 55 C90 85 72 105 50 114 C28 105 10 85 10 55 L10 20 Z"
+        d="M14 96 C20 90 24 82 24 74"
+        fill="none"
+        stroke="var(--bg)"
+        strokeWidth="1.4"
+        opacity="0.55"
+      />
+      <path
+        d="M15 92 L20 89 M14 86 L19.5 84 M15.5 80 L20.5 79"
+        stroke="var(--bg)"
+        strokeWidth="1.4"
+        opacity="0.55"
+        strokeLinecap="round"
+      />
+      <path
+        d="M86 96 C80 90 76 82 76 74"
+        fill="none"
+        stroke="var(--bg)"
+        strokeWidth="1.4"
+        opacity="0.55"
+      />
+      <path
+        d="M85 92 L80 89 M86 86 L80.5 84 M84.5 80 L79.5 79"
+        stroke="var(--bg)"
+        strokeWidth="1.4"
+        opacity="0.55"
+        strokeLinecap="round"
+      />
+
+      {/* shield outline (outer + inner hairline) */}
+      <path
+        d="M50 14 L88 26 L88 56 C88 84 71 102 50 110 C29 102 12 84 12 56 L12 26 Z"
         fill="var(--bg)"
         stroke="var(--bg)"
         strokeWidth="2.5"
       />
       <path
-        d="M50 15 L82 26 L82 55 C82 79 67 96 50 104 C33 96 18 79 18 55 L18 26 Z"
+        d="M50 21 L80 31 L80 56 C80 78 66 93 50 100 C34 93 20 78 20 56 L20 31 Z"
         fill="none"
         stroke="var(--fg)"
         strokeWidth="1"
-        opacity="0.5"
+        opacity="0.3"
       />
-      <path d="M50 38 L64 55 L50 72 L36 55 Z" fill="var(--suit-hearts)" />
+
+      {/* small crown resting on the shield's peak */}
+      <path
+        d="M40 12 L44 4 L50 10 L56 4 L60 12 L58 15 L42 15 Z"
+        fill="var(--bg)"
+      />
+      <circle cx="50" cy="6" r="1.6" fill="var(--bg)" />
+
+      {/* chalice at the shield's heart */}
+      <path
+        d="M39 40 C39 49 43.5 55.5 50 55.5 C56.5 55.5 61 49 61 40"
+        fill="none"
+        stroke="var(--fg)"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <rect x="48" y="55" width="4" height="13" fill="var(--fg)" />
+      <path
+        d="M40 72 C40 69.5 44.2 68 50 68 C55.8 68 60 69.5 60 72 L60 74.5 L40 74.5 Z"
+        fill="var(--fg)"
+      />
+      <circle cx="50" cy="45" r="3.4" fill="var(--suit-hearts)" />
+    </svg>
+  );
+}
+
+// Tiny corner fleuron used to echo the back's heraldry on the front faces.
+function CornerFleuron({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" className={className} aria-hidden="true">
+      <path
+        d="M10 1 L13 7 L19 10 L13 13 L10 19 L7 13 L1 10 L7 7 Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -76,6 +141,10 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
         <div className="playing-card-face playing-card-back">
           <div className="back-frame">
             <div className="back-lattice" />
+            <span className="back-corner back-corner-tl" aria-hidden="true" />
+            <span className="back-corner back-corner-tr" aria-hidden="true" />
+            <span className="back-corner back-corner-bl" aria-hidden="true" />
+            <span className="back-corner back-corner-br" aria-hidden="true" />
             <CrestEmblem className="back-crest" />
             <span className="back-wordmark">Drink Game</span>
           </div>
@@ -84,17 +153,23 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
         <div className={`playing-card-face playing-card-front ${suitClass}`}>
           {card && (
             <>
+              <CornerFleuron className="front-fleuron front-fleuron-tl" />
+              <CornerFleuron className="front-fleuron front-fleuron-br" />
+
               <div className="poster-body">
                 <div className="corner corner-top">
                   <span className="rank">{card.rank}</span>
+                  <span className="corner-divider" />
                   <SuitIcon suit={card.suit} className="corner-suit" />
                 </div>
 
+                <SuitIcon suit={card.suit} className="poster-suit-watermark" />
                 <span className="poster-rank">{card.rank}</span>
                 <SuitIcon suit={card.suit} className="poster-suit" />
 
                 <div className="corner corner-bottom">
                   <span className="rank">{card.rank}</span>
+                  <span className="corner-divider" />
                   <SuitIcon suit={card.suit} className="corner-suit" />
                 </div>
               </div>
