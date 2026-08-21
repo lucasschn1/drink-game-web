@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Match.id doubles as the short join code used in the shareable link (e.g. "AB3X9K"),
+// generated in application code — no separate code column needed.
+model Match {
+  id                 String          @id
+  status             MatchStatus     @default(WAITING)
+  currentPlayerIndex Int             @default(0)
+  currentRound       Int             @default(1)
+  revealedCardId     Int?
+  createdAt          DateTime        @default(now())
+
+  players            Player[]
+  deck               MatchDeckCard[]
+  revealedCard       Card?           @relation("RevealedInMatch", fields: [revealedCardId], references: [id])
+}
+
+model Player {
+  id        Int    @id @default(autoincrement())
+  matchId   String
+  name      String
+  turnOrder Int
+
+  match     Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, turnOrder])
+  @@index([matchId])
+}
+
+// Fixed seed deck — same cards reused across all matches for now.
+model Card {
+  id        Int             @id @default(autoincrement())
+  text      String
+  category  String
+  target    String
+  intensity String
+
+  deckEntries    MatchDeckCard[]
+  revealedInMatches Match[]      @relation("RevealedInMatch")
+}
+
+// Per-match shuffled instance of the deck, so "no repeats until exhausted"
+// survives a page refresh instead of living in client memory.
+model MatchDeckCard {
+  id       Int     @id @default(autoincrement())
+  matchId  String
+  cardId   Int
+  position Int
+  drawn    Boolean @default(false)
+
+  match    Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  card     Card    @relation(fields: [cardId], references: [id])
+
+  @@unique([matchId, position])
+  @@index([matchId])
+}
+
+enum MatchStatus {
+  WAITING
+  IN_PROGRESS
+  FINISHED
+}
