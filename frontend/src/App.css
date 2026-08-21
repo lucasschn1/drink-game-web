@@ -2,7 +2,12 @@
   max-width: 480px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
-  font-family: system-ui, sans-serif;
+  font-family: "Manrope", system-ui, sans-serif;
+}
+
+h1,
+h2 {
+  font-family: "Bricolage Grotesque", "Manrope", system-ui, sans-serif;
 }
 
 .screen {
@@ -34,19 +39,6 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.card {
-  padding: 2rem 1rem;
-  border-radius: 12px;
-  background: #0d0b14;
-  color: white;
-  text-align: center;
-  font-size: 1.25rem;
-  min-height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .error {

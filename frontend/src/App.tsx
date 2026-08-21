@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { MatchState } from "./api/types";
+import { PlayingCard } from "./components/PlayingCard";
 import "./App.css";
 
 type Screen = "home" | "players" | "game";
@@ -148,19 +149,17 @@ export default function App() {
           <p className="round">Rodada {match.currentRound}</p>
           <h2>Vez de {match.currentPlayer?.name}</h2>
 
-          {!match.revealedCard ? (
-            <button disabled={loading} onClick={handleReveal}>
-              Revelar carta
+          <PlayingCard
+            card={match.revealedCard}
+            revealed={!!match.revealedCard}
+            onReveal={handleReveal}
+            loading={loading}
+          />
+
+          {match.revealedCard && (
+            <button disabled={loading} onClick={handleAdvance}>
+              Próximo jogador
             </button>
-          ) : (
-            <>
-              <div className={`card intensity-${match.revealedCard.intensity}`}>
-                {match.revealedCard.text}
-              </div>
-              <button disabled={loading} onClick={handleAdvance}>
-                Próximo jogador
-              </button>
-            </>
           )}
         </div>
       )}

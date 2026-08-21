@@ -34,13 +34,14 @@ model Player {
   @@index([matchId])
 }
 
-// Fixed seed deck — same cards reused across all matches for now.
+// Fixed seed deck — a traditional 52-card deck, same cards reused across
+// all matches. The rule text is keyed by rank (RULES_BY_RANK in seed.ts),
+// so all 4 suits of a given rank share the same rule.
 model Card {
-  id        Int             @id @default(autoincrement())
-  text      String
-  category  String
-  target    String
-  intensity String
+  id   Int    @id @default(autoincrement())
+  rank String // "A", "2".."10", "J", "Q", "K"
+  suit String // "hearts" | "diamonds" | "clubs" | "spades"
+  text String // rule tied to this card's rank
 
   deckEntries    MatchDeckCard[]
   revealedInMatches Match[]      @relation("RevealedInMatch")

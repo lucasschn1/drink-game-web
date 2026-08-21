@@ -7,12 +7,13 @@ export interface Player {
   turnOrder: number;
 }
 
+export type Suit = "hearts" | "diamonds" | "clubs" | "spades";
+
 export interface Card {
   id: number;
+  rank: string;
+  suit: Suit;
   text: string;
-  category: string;
-  target: string;
-  intensity: string;
 }
 
 export interface MatchState {
