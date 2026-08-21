@@ -8,6 +8,7 @@ import { setHostToken, isHost, setPlayerToken, getTokenFor } from "./lib/identit
 import "./App.css";
 
 type Screen = "home" | "players" | "game";
+type GameMode = "local" | "multiplayer";
 
 function getCodeFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get("m");
@@ -50,6 +51,13 @@ function formatTime(totalSeconds: number): string {
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [match, setMatch] = useState<MatchState | null>(null);
+  // Purely a client-side presentation choice (same backend either way): local
+  // just means "no reason to show/share a link, and no reason to poll since
+  // only this device ever interacts with the match". A resumed session (link
+  // opened fresh) has no way to know which was originally picked, so it
+  // defaults to the safer assumption — multiplayer — which still works fine
+  // for a local game, just polls a little more than strictly necessary.
+  const [gameMode, setGameMode] = useState<GameMode>("multiplayer");
   const [joinName, setJoinName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,6 +70,7 @@ export default function App() {
 
   const previousPlayerId = useRef<number | null>(null);
   const previousPendingShotId = useRef<number | null>(null);
+  const joinInputRef = useRef<HTMLInputElement | null>(null);
 
   // Resume an in-progress match if the link already has a code (shared link / refresh).
   useEffect(() => {
@@ -81,8 +90,10 @@ export default function App() {
   // screen reflects whoever's action actually happened (not just this
   // device's own). Paused while a mutation from this device is in flight,
   // so a slightly-stale poll response can't clobber an optimistic update.
+  // Skipped entirely in local mode — only this device ever acts, so there's
+  // nothing else to sync from.
   useEffect(() => {
-    if (!match || loading || (screen !== "players" && screen !== "game")) return;
+    if (!match || loading || gameMode === "local" || (screen !== "players" && screen !== "game")) return;
     const code = match.code;
     const interval = setInterval(() => {
       api
@@ -93,7 +104,7 @@ export default function App() {
         });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [screen, match?.code, loading]);
+  }, [screen, match?.code, loading, gameMode]);
 
   // Announce a new turn (but not on the very first render of the game screen).
   useEffect(() => {
@@ -145,13 +156,14 @@ export default function App() {
     }
   }
 
-  async function handleCreateMatch() {
+  async function handleCreateMatch(mode: GameMode) {
     setLoading(true);
     setError(null);
     try {
       const { code, hostToken } = await api.createMatch();
       setCodeInUrl(code);
       setHostToken(code, hostToken);
+      setGameMode(mode);
       const state = await api.getMatch(code);
       setMatch(state);
       setScreen("players");
@@ -172,6 +184,9 @@ export default function App() {
       setPlayerToken(match.code, player.id, token);
       setJoinName("");
       setMatch(await api.getMatch(match.code));
+      // Local mode: same device is about to type the next name too — keep
+      // the keyboard up and focus ready instead of making them tap back in.
+      joinInputRef.current?.focus();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -285,13 +300,16 @@ export default function App() {
                 </div>
                 <h1>Drink Game</h1>
                 <p className="tagline">
-                  Um baralho de verdade — cada um entra pelo próprio celular com o link. Cadastre a
-                  galera e bora.
+                  Um baralho de verdade. Jogue com o celular passando de mão em mão, ou cada um no
+                  seu, pelo link.
                 </p>
               </div>
               <div className="home-actions">
-                <button disabled={loading} onClick={handleCreateMatch}>
-                  {loading ? "Criando…" : "Começar partida"}
+                <button disabled={loading} onClick={() => handleCreateMatch("multiplayer")}>
+                  {loading ? "Criando…" : "Jogar com o grupo (cada um no seu)"}
+                </button>
+                <button type="button" className="secondary" disabled={loading} onClick={() => handleCreateMatch("local")}>
+                  {loading ? "Criando…" : "Jogar neste celular"}
                 </button>
                 <button type="button" className="secondary" onClick={() => setShowHowToPlay(true)}>
                   Como jogar
@@ -303,7 +321,7 @@ export default function App() {
           {screen === "players" && match && (
             <div className="screen">
               <div className="players-header">
-                <h2>Sala de espera</h2>
+                <h2>{gameMode === "local" ? "Jogadores" : "Sala de espera"}</h2>
                 <span className="player-count">
                   {match.players.length}/{MAX_PLAYERS}
                 </span>
@@ -328,8 +346,9 @@ export default function App() {
                 </label>
                 <input
                   id="join-name"
+                  ref={joinInputRef}
                   value={joinName}
-                  placeholder="Seu nome"
+                  placeholder={gameMode === "local" ? `Jogador ${match.players.length + 1}` : "Seu nome"}
                   maxLength={30}
                   disabled={match.players.length >= MAX_PLAYERS}
                   onChange={(e) => setJoinName(e.target.value)}
@@ -359,12 +378,14 @@ export default function App() {
                 </button>
               )}
 
-              <div className="link-hint">
-                <code>{window.location.href}</code>
-                <button type="button" onClick={handleCopyLink}>
-                  {linkCopied ? "Copiado!" : "Copiar link"}
-                </button>
-              </div>
+              {gameMode === "multiplayer" && (
+                <div className="link-hint">
+                  <code>{window.location.href}</code>
+                  <button type="button" onClick={handleCopyLink}>
+                    {linkCopied ? "Copiado!" : "Copiar link"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
