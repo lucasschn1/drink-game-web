@@ -15,6 +15,10 @@ model Match {
   currentPlayerIndex Int             @default(0)
   currentRound       Int             @default(1)
   revealedCardId     Int?
+  // Set when a K is drawn ("crie uma regra nova, válida até o fim da
+  // rodada") — cleared automatically in /advance whenever the round
+  // increments, so it never outlives the round it was created in.
+  houseRule          String?
   createdAt          DateTime        @default(now())
 
   players            Player[]

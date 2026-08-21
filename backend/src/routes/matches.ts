@@ -48,6 +48,7 @@ async function loadMatchState(matchId: string) {
     currentPlayer,
     players: match.players,
     revealedCard: match.revealedCard,
+    houseRule: match.houseRule,
     deck: { total: deckTotal, drawn: deckDrawn },
   };
 }
@@ -210,6 +211,30 @@ matchesRouter.post(
   }),
 );
 
+// POST /api/matches/:code/house-rule — record the custom rule created by a K draw.
+matchesRouter.post(
+  "/:code/house-rule",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const text: unknown = req.body?.text;
+
+    if (typeof text !== "string" || !text.trim() || text.trim().length > 200) {
+      return res.status(400).json({ error: "Provide a rule up to 200 characters" });
+    }
+
+    const match = await prisma.match.findUnique({ where: { id: code } });
+    if (!match) return res.status(404).json({ error: "Match not found" });
+    if (match.status !== "IN_PROGRESS") {
+      return res.status(409).json({ error: "Match is not in progress" });
+    }
+
+    await prisma.match.update({ where: { id: code }, data: { houseRule: text.trim() } });
+
+    const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);
+
 // POST /api/matches/:code/advance — close the current turn and move to the next player.
 matchesRouter.post(
   "/:code/advance",
@@ -235,6 +260,9 @@ matchesRouter.post(
         currentPlayerIndex: nextIndex,
         currentRound: wrapped ? match.currentRound + 1 : match.currentRound,
         revealedCardId: null,
+        // A house rule from a K only lasts "until the end of the round" —
+        // clear it exactly when the round itself increments.
+        ...(wrapped ? { houseRule: null } : {}),
       },
     });
 

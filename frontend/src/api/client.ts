@@ -33,4 +33,10 @@ export const api = {
 
   advanceTurn: (code: string) =>
     request<MatchState>(`/matches/${code}/advance`, { method: "POST" }),
+
+  setHouseRule: (code: string, text: string) =>
+    request<MatchState>(`/matches/${code}/house-rule`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
 };

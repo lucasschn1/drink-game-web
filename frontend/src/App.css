@@ -60,3 +60,32 @@ button:disabled {
   color: #666;
   margin: 0;
 }
+
+.house-rule {
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  color: #d8fbff;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.last-card-badge {
+  align-self: center;
+  background: rgba(255, 46, 151, 0.15);
+  border: 1px solid rgba(255, 46, 151, 0.5);
+  color: #ffd3ea;
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.house-rule-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.house-rule-form input {
+  flex: 1;
+}

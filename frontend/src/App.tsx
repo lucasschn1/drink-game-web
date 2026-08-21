@@ -22,6 +22,7 @@ export default function App() {
   const [playerNames, setPlayerNames] = useState<string[]>(["", ""]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [houseRuleInput, setHouseRuleInput] = useState("");
 
   // Resume an in-progress match if the link already has a code (shared link / refresh).
   useEffect(() => {
@@ -77,7 +78,11 @@ export default function App() {
     if (!match) return;
     setLoading(true);
     try {
-      setMatch(await api.revealCard(match.code));
+      const state = await api.revealCard(match.code);
+      setMatch(state);
+      // Best-effort tactile feedback — iOS Safari has no Vibration API at
+      // all, so this silently no-ops there; Android Chrome picks it up.
+      navigator.vibrate?.(60);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -90,6 +95,19 @@ export default function App() {
     setLoading(true);
     try {
       setMatch(await api.advanceTurn(match.code));
+      setHouseRuleInput("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveHouseRule() {
+    if (!match || !houseRuleInput.trim()) return;
+    setLoading(true);
+    try {
+      setMatch(await api.setHouseRule(match.code, houseRuleInput.trim()));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -149,12 +167,39 @@ export default function App() {
           <p className="round">Rodada {match.currentRound}</p>
           <h2>Vez de {match.currentPlayer?.name}</h2>
 
+          {match.houseRule && (
+            <div className="house-rule">
+              <strong>Regra da rodada:</strong> {match.houseRule}
+            </div>
+          )}
+
+          {match.revealedCard && match.deck.drawn >= match.deck.total && (
+            <p className="last-card-badge">Última carta antes de embaralhar!</p>
+          )}
+
           <PlayingCard
             card={match.revealedCard}
             revealed={!!match.revealedCard}
             onReveal={handleReveal}
             loading={loading}
           />
+
+          {match.revealedCard?.rank === "K" && (
+            <div className="house-rule-form">
+              <input
+                value={houseRuleInput}
+                placeholder="Qual é a nova regra?"
+                maxLength={200}
+                onChange={(e) => setHouseRuleInput(e.target.value)}
+              />
+              <button
+                disabled={loading || !houseRuleInput.trim()}
+                onClick={handleSaveHouseRule}
+              >
+                Salvar regra
+              </button>
+            </div>
+          )}
 
           {match.revealedCard && (
             <button disabled={loading} onClick={handleAdvance}>

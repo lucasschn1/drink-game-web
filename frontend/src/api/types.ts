@@ -24,5 +24,6 @@ export interface MatchState {
   currentPlayer: Player | null;
   players: Player[];
   revealedCard: Card | null;
+  houseRule: string | null;
   deck: { total: number; drawn: number };
 }
