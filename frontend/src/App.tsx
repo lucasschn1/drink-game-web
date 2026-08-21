@@ -104,24 +104,31 @@ export default function App() {
 
   // Shot-roulette timer: runs continuously through the whole match,
   // independent of whose turn it is or whether a card is on screen — purely
-  // client-side, no server round-trip, resets to 3:00 whenever it fires or
-  // whenever a fresh match starts.
+  // client-side, no server round-trip. On hitting zero it freezes (doesn't
+  // reset yet) and blinks until someone taps it — only that tap resumes the
+  // countdown from 3:00, so the moment can't be missed by staring at
+  // whoever's turn it currently isn't.
   useEffect(() => {
     if (screen !== "game" || match?.status !== "IN_PROGRESS" || !match.players.length) return;
+    if (shotAnnounce) return; // frozen, waiting for the tap to dismiss
 
     const interval = setInterval(() => {
       setShotTimeLeft((prev) => {
         if (prev > 1) return prev - 1;
         const chosen = match.players[Math.floor(Math.random() * match.players.length)];
         setShotAnnounce(chosen.name);
-        navigator.vibrate?.([80, 60, 80]);
-        setTimeout(() => setShotAnnounce(null), 1800);
-        return SHOT_TIMER_SECONDS;
+        navigator.vibrate?.([100, 80, 100, 80, 100]);
+        return 0;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [screen, match?.status, match?.players]);
+  }, [screen, match?.status, match?.players, shotAnnounce]);
+
+  function handleDismissShot() {
+    setShotAnnounce(null);
+    setShotTimeLeft(SHOT_TIMER_SECONDS);
+  }
 
   const duplicateIndexes = useMemo(() => {
     const seen = new Map<string, number>();
@@ -386,9 +393,16 @@ export default function App() {
               )}
 
               {shotAnnounce && (
-                <div className="shot-announce" role="status" aria-live="assertive">
-                  Hora do shot, {shotAnnounce}!
-                </div>
+                <button
+                  type="button"
+                  className="shot-announce"
+                  onClick={handleDismissShot}
+                  role="status"
+                  aria-live="assertive"
+                >
+                  <span className="shot-announce-title">Hora do shot, {shotAnnounce}!</span>
+                  <span className="shot-announce-hint">Toque para continuar</span>
+                </button>
               )}
 
               <div className="game-header">
