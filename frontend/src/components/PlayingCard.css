@@ -4,6 +4,14 @@
   perspective: 1400px;
   margin: 0.5rem 0;
   transition: transform 0.35s ease;
+  /* perspective + the card's own preserve-3d/backface-visibility open a real
+     3D rendering context, which some browsers composite above 2D siblings
+     regardless of z-index (e.g. the turn-announce overlay, z-index: 10, was
+     rendering behind the card mid-flip). isolation: isolate forces a proper,
+     ordered stacking context here so an explicit lower z-index is respected. */
+  isolation: isolate;
+  position: relative;
+  z-index: 1;
 }
 
 /* Lift-on-hover is gated to devices that actually have a hover-capable
@@ -325,7 +333,10 @@
   z-index: 1;
   font-family: "Cinzel Decorative", "Inter", serif;
   font-weight: 900;
-  font-size: clamp(5.4rem, 28vw, 8.4rem);
+  /* Sized with headroom for the widest glyph (Q's swash tail runs well past
+     its own layout box — normal font-metrics overshoot — and was reaching
+     the inset frame at the old, larger size). */
+  font-size: clamp(4.8rem, 25vw, 7.6rem);
   line-height: 0.82;
   letter-spacing: 0;
 }

@@ -153,10 +153,14 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
         <div className={`playing-card-face playing-card-front ${suitClass}`}>
           {card && (
             <>
-              <CornerFleuron className="front-fleuron front-fleuron-tl" />
-              <CornerFleuron className="front-fleuron front-fleuron-br" />
-
               <div className="poster-body">
+                {/* Anchored inside poster-body (like corner-top/-bottom) instead
+                    of the whole face — otherwise the -br fleuron sits inside
+                    the rule-text band and overlaps its first line, worst on
+                    short one-line rules ("3", "10"). */}
+                <CornerFleuron className="front-fleuron front-fleuron-tl" />
+                <CornerFleuron className="front-fleuron front-fleuron-br" />
+
                 <div className="corner corner-top">
                   <span className="rank">{card.rank}</span>
                   <span className="corner-divider" />
