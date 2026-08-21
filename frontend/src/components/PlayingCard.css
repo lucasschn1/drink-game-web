@@ -12,6 +12,11 @@
   padding: 0;
   border: none;
   background: none;
+  /* Strip native button chrome — Safari's default button rendering can
+     interfere with 3D transform compositing on the element itself. */
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-transform-style: preserve-3d;
   transform-style: preserve-3d;
   transition: transform 0.6s cubic-bezier(0.4, 0.15, 0.2, 1);
   cursor: pointer;
@@ -19,6 +24,9 @@
 
 .playing-card:disabled {
   cursor: default;
+  /* Override the global button:disabled dimming (App.css) — the card itself
+     should never look "unavailable", only the separate action buttons do. */
+  opacity: 1;
 }
 
 .playing-card.flipped {
