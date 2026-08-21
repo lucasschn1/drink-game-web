@@ -184,7 +184,9 @@ matchesRouter.post(
       include: { players: true },
     });
     if (!match) return res.status(404).json({ error: "Match not found" });
-    if (token !== match.hostToken) return res.status(403).json({ error: "Only the host can start the match" });
+    if (!token || !match.hostToken || token !== match.hostToken) {
+      return res.status(403).json({ error: "Only the host can start the match" });
+    }
     if (match.status !== "WAITING") {
       return res.status(409).json({ error: "Match already started" });
     }
@@ -246,7 +248,7 @@ matchesRouter.post(
 
       const players = await tx.player.findMany({ where: { matchId: code }, orderBy: { turnOrder: "asc" } });
       const currentPlayer = players[locked.currentPlayerIndex];
-      if (!currentPlayer || currentPlayer.token !== token) return "forbidden";
+      if (!token || !currentPlayer || !currentPlayer.token || currentPlayer.token !== token) return "forbidden";
 
       if (locked.revealedCardId) return "ok"; // already revealed this turn — idempotent
 
@@ -306,7 +308,7 @@ matchesRouter.post(
     const currentPlayer = match.players
       .sort((a, b) => a.turnOrder - b.turnOrder)
       .find((p) => p.turnOrder === match.currentPlayerIndex);
-    if (!currentPlayer || currentPlayer.token !== token) {
+    if (!token || !currentPlayer || !currentPlayer.token || currentPlayer.token !== token) {
       return res.status(403).json({ error: "Not your turn" });
     }
 

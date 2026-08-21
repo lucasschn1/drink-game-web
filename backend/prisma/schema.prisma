@@ -23,7 +23,11 @@ model Match {
   // call /start, and accepted as a fallback credential on /advance so the
   // host can force-skip a player who lost their own token (dead phone,
   // private tab closed, etc).
-  hostToken          String
+  // Nullable only because it was added to a table that already had rows —
+  // every match created going forward always gets a real one; the auth
+  // checks explicitly require a non-empty token, so a null here can never
+  // match a null/missing header.
+  hostToken          String?
   // Shot-roulette timer (multiplayer): kept server-side only, never sent to
   // clients as a raw timestamp — see loadMatchState's clock-skew note.
   shotTimerEndsAt     DateTime?
@@ -44,7 +48,9 @@ model Player {
   // reveal/advance/house-rule to prove "this device is this player".
   // Not real auth, just enough to stop casual cross-device interference;
   // the match code itself is the real access control, same as before.
-  token     String
+  // Nullable only because it was added to a table that already had rows —
+  // see the matching note on Match.hostToken.
+  token     String?
 
   match     Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
 
