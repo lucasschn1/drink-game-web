@@ -13,7 +13,15 @@ const SUIT_PATHS: Record<Suit, string> = {
     "M16 2 C16 2 29 12.5 29 19.3 C29 24 25.4 27.3 21.3 27.3 C19.2 27.3 17.4 26.4 16 25 C16.6 27 17.4 28.4 19.5 30 L12.5 30 C14.6 28.4 15.4 27 16 25 C14.6 26.4 12.8 27.3 10.7 27.3 C6.6 27.3 3 24 3 19.3 C3 12.5 16 2 16 2 Z",
 };
 
-const RED_SUITS = new Set<Suit>(["hearts", "diamonds"]);
+// One flat, saturated poster color per suit — color itself is the primary
+// suit signal here (Swiss-poster idiom), the corner indices are the
+// secondary/traditional cue.
+const SUIT_CLASS: Record<Suit, string> = {
+  hearts: "suit-hearts",
+  diamonds: "suit-diamonds",
+  clubs: "suit-clubs",
+  spades: "suit-spades",
+};
 
 function SuitIcon({ suit, className }: { suit: Suit; className?: string }) {
   return (
@@ -31,7 +39,7 @@ interface PlayingCardProps {
 }
 
 export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardProps) {
-  const suitClass = card ? (RED_SUITS.has(card.suit) ? "suit-red" : "suit-black") : "";
+  const suitClass = card ? SUIT_CLASS[card.suit] : "";
 
   return (
     <div className="playing-card-scene">
@@ -43,25 +51,29 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
         aria-label={revealed ? undefined : "Revelar carta"}
       >
         <div className="playing-card-face playing-card-back">
-          <div className="playing-card-back-pattern" />
+          <span className="back-mark">?</span>
+          <span className="back-wordmark">DRINK GAME</span>
         </div>
 
         <div className={`playing-card-face playing-card-front ${suitClass}`}>
           {card && (
             <>
-              <div className="corner corner-top">
-                <span className="rank">{card.rank}</span>
-                <SuitIcon suit={card.suit} className="corner-suit" />
-              </div>
+              <div className="poster-body">
+                <div className="corner corner-top">
+                  <span className="rank">{card.rank}</span>
+                  <SuitIcon suit={card.suit} className="corner-suit" />
+                </div>
 
-              <SuitIcon suit={card.suit} className="watermark-suit" />
+                <span className="poster-rank">{card.rank}</span>
+                <SuitIcon suit={card.suit} className="poster-suit" />
+
+                <div className="corner corner-bottom">
+                  <span className="rank">{card.rank}</span>
+                  <SuitIcon suit={card.suit} className="corner-suit" />
+                </div>
+              </div>
 
               <p className="rule-text">{card.text}</p>
-
-              <div className="corner corner-bottom">
-                <span className="rank">{card.rank}</span>
-                <SuitIcon suit={card.suit} className="corner-suit" />
-              </div>
             </>
           )}
         </div>

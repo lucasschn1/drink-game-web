@@ -21,6 +21,23 @@ function getInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
 
+// Same four flat poster colors used on the cards, cycled by player index so
+// each avatar reads as consistently "that player's color" all game long.
+const AVATAR_COLORS = ["var(--suit-clubs)", "var(--suit-diamonds)", "var(--suit-hearts)", "var(--suit-spades)"];
+
+function getAvatarColor(index: number): string {
+  return AVATAR_COLORS[index % AVATAR_COLORS.length];
+}
+
+const MAX_PLAYERS = 15;
+
+function splitPastedNames(text: string): string[] {
+  return text
+    .split(/[,\n]+/)
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -34,6 +51,14 @@ export default function App() {
   const [turnAnnounce, setTurnAnnounce] = useState<string | null>(null);
 
   const previousPlayerId = useRef<number | null>(null);
+  const playerInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (focusIndex === null) return;
+    playerInputRefs.current[focusIndex]?.focus();
+    setFocusIndex(null);
+  }, [focusIndex, playerNames.length]);
 
   // Resume an in-progress match if the link already has a code (shared link / refresh).
   useEffect(() => {
@@ -157,6 +182,32 @@ export default function App() {
     }
   }
 
+  function addPlayerField() {
+    if (playerNames.length >= MAX_PLAYERS) return;
+    setPlayerNames([...playerNames, ""]);
+    setFocusIndex(playerNames.length);
+  }
+
+  function handleNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>, i: number) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (i < playerNames.length - 1) {
+      playerInputRefs.current[i + 1]?.focus();
+    } else {
+      addPlayerField();
+    }
+  }
+
+  function handleNamePaste(e: React.ClipboardEvent<HTMLInputElement>, i: number) {
+    const pasted = splitPastedNames(e.clipboardData.getData("text"));
+    if (pasted.length < 2) return; // let the browser handle a normal single-name paste
+    e.preventDefault();
+    const merged = [...playerNames];
+    merged.splice(i, 1, ...pasted);
+    const deduped = merged.filter((n, idx) => n.trim() || idx >= merged.length - 1);
+    setPlayerNames(deduped.slice(0, MAX_PLAYERS));
+  }
+
   async function handleCopyLink() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -188,34 +239,67 @@ export default function App() {
         <>
           {screen === "home" && (
             <div className="screen">
-              <h1>Drink Game</h1>
-              <button disabled={loading} onClick={handleCreateMatch}>
-                {loading ? "Criando…" : "Começar partida"}
-              </button>
-              <button type="button" className="secondary" onClick={() => setShowHowToPlay(true)}>
-                Como jogar
-              </button>
+              <div className="hero">
+                <div className="card-fan" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <h1>Drink Game</h1>
+                <p className="tagline">
+                  Um baralho de verdade, um celular passando de mão em mão. Cadastre a galera e
+                  bora.
+                </p>
+              </div>
+              <div className="home-actions">
+                <button disabled={loading} onClick={handleCreateMatch}>
+                  {loading ? "Criando…" : "Começar partida"}
+                </button>
+                <button type="button" className="secondary" onClick={() => setShowHowToPlay(true)}>
+                  Como jogar
+                </button>
+              </div>
             </div>
           )}
 
           {screen === "players" && match && (
             <div className="screen">
-              <h2>Jogadores</h2>
+              <div className="players-header">
+                <h2>Jogadores</h2>
+                <span className="player-count">
+                  {validNames.length}/{MAX_PLAYERS}
+                </span>
+              </div>
+
               {playerNames.map((name, i) => (
                 <div className="player-row" key={i}>
+                  <span
+                    className="avatar avatar-small"
+                    style={{ background: getAvatarColor(i) }}
+                    aria-hidden="true"
+                  >
+                    {name.trim() ? getInitial(name) : i + 1}
+                  </span>
                   <label className="sr-only" htmlFor={`player-${i}`}>
                     Nome do jogador {i + 1}
                   </label>
                   <input
                     id={`player-${i}`}
+                    ref={(el) => {
+                      playerInputRefs.current[i] = el;
+                    }}
                     value={name}
                     placeholder={`Jogador ${i + 1}`}
+                    maxLength={30}
                     className={duplicateIndexes.has(i) ? "input-error" : ""}
                     onChange={(e) => {
                       const next = [...playerNames];
                       next[i] = e.target.value;
                       setPlayerNames(next);
                     }}
+                    onKeyDown={(e) => handleNameKeyDown(e, i)}
+                    onPaste={(e) => handleNamePaste(e, i)}
                   />
                   {playerNames.length > 2 && (
                     <button
@@ -229,10 +313,18 @@ export default function App() {
                   )}
                 </div>
               ))}
+
               {duplicateIndexes.size > 0 && (
                 <p className="field-hint field-hint-error">Nomes repetidos — ajuste antes de continuar.</p>
               )}
-              <button type="button" onClick={() => setPlayerNames([...playerNames, ""])}>
+              {duplicateIndexes.size === 0 && validNames.length < 2 && (
+                <p className="field-hint">Adicione pelo menos 2 jogadores.</p>
+              )}
+              {playerNames.length >= MAX_PLAYERS && (
+                <p className="field-hint">Máximo de {MAX_PLAYERS} jogadores.</p>
+              )}
+
+              <button type="button" onClick={addPlayerField} disabled={playerNames.length >= MAX_PLAYERS}>
                 + Adicionar jogador
               </button>
               <button disabled={loading || !canStart} onClick={handleStart}>
@@ -257,7 +349,12 @@ export default function App() {
 
               <p className="round">Rodada {match.currentRound}</p>
               <div className="current-player">
-                <span className="avatar">{getInitial(match.currentPlayer?.name ?? "")}</span>
+                <span
+                  className="avatar"
+                  style={{ background: getAvatarColor(match.currentPlayerIndex) }}
+                >
+                  {getInitial(match.currentPlayer?.name ?? "")}
+                </span>
                 <h2>Vez de {match.currentPlayer?.name}</h2>
               </div>
 
