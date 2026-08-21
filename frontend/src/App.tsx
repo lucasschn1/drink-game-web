@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import type { MatchState } from "./api/types";
 import { PlayingCard } from "./components/PlayingCard";
 import { HowToPlayModal } from "./components/HowToPlayModal";
 import { unlockAudio, playShotAlert } from "./lib/sound";
+import { setHostToken, isHost, setPlayerToken, getTokenFor } from "./lib/identity";
 import "./App.css";
 
 type Screen = "home" | "players" | "game";
@@ -22,7 +23,7 @@ function getInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
 
-// Same four suit colors used on the cards, cycled by player index so each
+// Same four suit colors used on the cards, cycled by turn order so each
 // avatar reads as consistently "that player's color" all game long. Text
 // color is paired per swatch — the mustard diamond tone needs dark text,
 // the rest read better with white.
@@ -38,7 +39,7 @@ function getAvatarColor(index: number): { bg: string; fg: string } {
 }
 
 const MAX_PLAYERS = 15;
-const SHOT_TIMER_SECONDS = 180;
+const POLL_INTERVAL_MS = 2000;
 
 function formatTime(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -46,17 +47,10 @@ function formatTime(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function splitPastedNames(text: string): string[] {
-  return text
-    .split(/[,\n]+/)
-    .map((n) => n.trim())
-    .filter(Boolean);
-}
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [match, setMatch] = useState<MatchState | null>(null);
-  const [playerNames, setPlayerNames] = useState<string[]>(["", ""]);
+  const [joinName, setJoinName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(!!getCodeFromUrl());
@@ -64,18 +58,10 @@ export default function App() {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [turnAnnounce, setTurnAnnounce] = useState<string | null>(null);
-  const [shotTimeLeft, setShotTimeLeft] = useState(SHOT_TIMER_SECONDS);
-  const [shotAnnounce, setShotAnnounce] = useState<string | null>(null);
+  const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
 
   const previousPlayerId = useRef<number | null>(null);
-  const playerInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [focusIndex, setFocusIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (focusIndex === null) return;
-    playerInputRefs.current[focusIndex]?.focus();
-    setFocusIndex(null);
-  }, [focusIndex, playerNames.length]);
+  const previousPendingShotId = useRef<number | null>(null);
 
   // Resume an in-progress match if the link already has a code (shared link / refresh).
   useEffect(() => {
@@ -91,6 +77,24 @@ export default function App() {
       .finally(() => setInitialLoading(false));
   }, []);
 
+  // Multiplayer sync: every device polls the same match state, so everyone's
+  // screen reflects whoever's action actually happened (not just this
+  // device's own). Paused while a mutation from this device is in flight,
+  // so a slightly-stale poll response can't clobber an optimistic update.
+  useEffect(() => {
+    if (!match || loading || (screen !== "players" && screen !== "game")) return;
+    const code = match.code;
+    const interval = setInterval(() => {
+      api
+        .getMatch(code)
+        .then(setMatch)
+        .catch(() => {
+          /* transient poll failure — try again next tick */
+        });
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [screen, match?.code, loading]);
+
   // Announce a new turn (but not on the very first render of the game screen).
   useEffect(() => {
     const currentId = match?.currentPlayer?.id ?? null;
@@ -103,60 +107,51 @@ export default function App() {
     previousPlayerId.current = currentId;
   }, [match?.currentPlayer?.id, match?.currentPlayer?.name]);
 
-  // Shot-roulette timer: runs continuously through the whole match,
-  // independent of whose turn it is or whether a card is on screen — purely
-  // client-side, no server round-trip. On hitting zero it freezes (doesn't
-  // reset yet) and blinks until someone taps it — only that tap resumes the
-  // countdown from 3:00, so the moment can't be missed by staring at
-  // whoever's turn it currently isn't.
+  // Shot-roulette alert: visibility is driven entirely by the server
+  // (match.shotTimer.pendingPlayer), so every device shows/hides it in sync.
+  // The vibrate/sound side effect only fires once per pending event (on the
+  // null → set transition), not on every poll while it's still pending.
   useEffect(() => {
-    if (screen !== "game" || match?.status !== "IN_PROGRESS" || !match.players.length) return;
-    if (shotAnnounce) return; // frozen, waiting for the tap to dismiss
+    const pendingId = match?.shotTimer.pendingPlayer?.id ?? null;
+    if (pendingId !== null && previousPendingShotId.current === null) {
+      navigator.vibrate?.([100, 80, 100, 80, 100]);
+      playShotAlert();
+    }
+    previousPendingShotId.current = pendingId;
+  }, [match?.shotTimer.pendingPlayer?.id]);
 
+  // The countdown display: resynced to the server's authoritative
+  // remainingSeconds every poll (phones' clocks drift, so the server counts,
+  // not the client), ticking down locally between polls just so it doesn't
+  // look frozen for two seconds at a time.
+  useEffect(() => {
+    setDisplaySeconds(match?.shotTimer.remainingSeconds ?? null);
+  }, [match?.shotTimer.remainingSeconds]);
+
+  useEffect(() => {
+    if (screen !== "game" || match?.status !== "IN_PROGRESS" || match?.shotTimer.pendingPlayer) return;
     const interval = setInterval(() => {
-      setShotTimeLeft((prev) => {
-        if (prev > 1) return prev - 1;
-        const chosen = match.players[Math.floor(Math.random() * match.players.length)];
-        setShotAnnounce(chosen.name);
-        navigator.vibrate?.([100, 80, 100, 80, 100]);
-        playShotAlert();
-        return 0;
-      });
+      setDisplaySeconds((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
     }, 1000);
-
     return () => clearInterval(interval);
-  }, [screen, match?.status, match?.players, shotAnnounce]);
+  }, [screen, match?.status, match?.shotTimer.pendingPlayer]);
 
-  function handleDismissShot() {
-    setShotAnnounce(null);
-    setShotTimeLeft(SHOT_TIMER_SECONDS);
+  async function handleDismissShot() {
+    if (!match) return;
+    try {
+      setMatch(await api.shotAck(match.code));
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
-
-  const duplicateIndexes = useMemo(() => {
-    const seen = new Map<string, number>();
-    const dupes = new Set<number>();
-    playerNames.forEach((name, i) => {
-      const key = name.trim().toLowerCase();
-      if (!key) return;
-      if (seen.has(key)) {
-        dupes.add(i);
-        dupes.add(seen.get(key)!);
-      } else {
-        seen.set(key, i);
-      }
-    });
-    return dupes;
-  }, [playerNames]);
-
-  const validNames = playerNames.map((n) => n.trim()).filter(Boolean);
-  const canStart = validNames.length >= 2 && duplicateIndexes.size === 0;
 
   async function handleCreateMatch() {
     setLoading(true);
     setError(null);
     try {
-      const { code } = await api.createMatch();
+      const { code, hostToken } = await api.createMatch();
       setCodeInUrl(code);
+      setHostToken(code, hostToken);
       const state = await api.getMatch(code);
       setMatch(state);
       setScreen("players");
@@ -167,16 +162,32 @@ export default function App() {
     }
   }
 
+  async function handleJoin() {
+    if (!match || !joinName.trim()) return;
+    setLoading(true);
+    setError(null);
+    unlockAudio();
+    try {
+      const { player, token } = await api.join(match.code, joinName.trim());
+      setPlayerToken(match.code, player.id, token);
+      setJoinName("");
+      setMatch(await api.getMatch(match.code));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleStart() {
-    if (!match || !canStart) return;
+    if (!match) return;
     setLoading(true);
     setError(null);
     unlockAudio(); // real click, safe place to unlock for the shot timer later
     try {
-      await api.setPlayers(match.code, validNames);
       const state = await api.startMatch(match.code);
       previousPlayerId.current = state.currentPlayer?.id ?? null;
-      setShotTimeLeft(SHOT_TIMER_SECONDS);
+      previousPendingShotId.current = null;
       setMatch(state);
       setScreen("game");
     } catch (err) {
@@ -192,7 +203,7 @@ export default function App() {
     setError(null);
     unlockAudio();
     try {
-      const state = await api.revealCard(match.code);
+      const state = await api.revealCard(match.code, match.currentPlayer?.id);
       setMatch(state);
       // Best-effort tactile feedback — iOS Safari has no Vibration API at
       // all, so this silently no-ops there; Android Chrome picks it up.
@@ -209,7 +220,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      setMatch(await api.advanceTurn(match.code));
+      setMatch(await api.advanceTurn(match.code, match.currentPlayer?.id));
       setHouseRuleInput("");
     } catch (err) {
       setError((err as Error).message);
@@ -223,38 +234,12 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      setMatch(await api.setHouseRule(match.code, houseRuleInput.trim()));
+      setMatch(await api.setHouseRule(match.code, houseRuleInput.trim(), match.currentPlayer?.id));
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }
-
-  function addPlayerField() {
-    if (playerNames.length >= MAX_PLAYERS) return;
-    setPlayerNames([...playerNames, ""]);
-    setFocusIndex(playerNames.length);
-  }
-
-  function handleNameKeyDown(e: React.KeyboardEvent<HTMLInputElement>, i: number) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    if (i < playerNames.length - 1) {
-      playerInputRefs.current[i + 1]?.focus();
-    } else {
-      addPlayerField();
-    }
-  }
-
-  function handleNamePaste(e: React.ClipboardEvent<HTMLInputElement>, i: number) {
-    const pasted = splitPastedNames(e.clipboardData.getData("text"));
-    if (pasted.length < 2) return; // let the browser handle a normal single-name paste
-    e.preventDefault();
-    const merged = [...playerNames];
-    merged.splice(i, 1, ...pasted);
-    const deduped = merged.filter((n, idx) => n.trim() || idx >= merged.length - 1);
-    setPlayerNames(deduped.slice(0, MAX_PLAYERS));
   }
 
   async function handleCopyLink() {
@@ -266,6 +251,9 @@ export default function App() {
       setError("Não consegui copiar automaticamente — selecione o link manualmente.");
     }
   }
+
+  const canAct = !!match && !!getTokenFor(match.code, match.currentPlayer?.id);
+  const canAdvance = canAct || (!!match && isHost(match.code));
 
   return (
     <div className="app">
@@ -297,8 +285,8 @@ export default function App() {
                 </div>
                 <h1>Drink Game</h1>
                 <p className="tagline">
-                  Um baralho de verdade, um celular passando de mão em mão. Cadastre a galera e
-                  bora.
+                  Um baralho de verdade — cada um entra pelo próprio celular com o link. Cadastre a
+                  galera e bora.
                 </p>
               </div>
               <div className="home-actions">
@@ -315,70 +303,62 @@ export default function App() {
           {screen === "players" && match && (
             <div className="screen">
               <div className="players-header">
-                <h2>Jogadores</h2>
+                <h2>Sala de espera</h2>
                 <span className="player-count">
-                  {validNames.length}/{MAX_PLAYERS}
+                  {match.players.length}/{MAX_PLAYERS}
                 </span>
               </div>
 
-              {playerNames.map((name, i) => (
-                <div className="player-row" key={i}>
+              {match.players.map((p) => (
+                <div className="player-row" key={p.id}>
                   <span
                     className="avatar avatar-small"
-                    style={{ background: getAvatarColor(i).bg, color: getAvatarColor(i).fg }}
+                    style={{ background: getAvatarColor(p.turnOrder).bg, color: getAvatarColor(p.turnOrder).fg }}
                     aria-hidden="true"
                   >
-                    {name.trim() ? getInitial(name) : i + 1}
+                    {getInitial(p.name)}
                   </span>
-                  <label className="sr-only" htmlFor={`player-${i}`}>
-                    Nome do jogador {i + 1}
-                  </label>
-                  <input
-                    id={`player-${i}`}
-                    ref={(el) => {
-                      playerInputRefs.current[i] = el;
-                    }}
-                    value={name}
-                    placeholder={`Jogador ${i + 1}`}
-                    maxLength={30}
-                    className={duplicateIndexes.has(i) ? "input-error" : ""}
-                    onChange={(e) => {
-                      const next = [...playerNames];
-                      next[i] = e.target.value;
-                      setPlayerNames(next);
-                    }}
-                    onKeyDown={(e) => handleNameKeyDown(e, i)}
-                    onPaste={(e) => handleNamePaste(e, i)}
-                  />
-                  {playerNames.length > 2 && (
-                    <button
-                      type="button"
-                      className="remove-player"
-                      aria-label={`Remover jogador ${i + 1}`}
-                      onClick={() => setPlayerNames(playerNames.filter((_, idx) => idx !== i))}
-                    >
-                      ×
-                    </button>
-                  )}
+                  <span className="joined-name">{p.name}</span>
                 </div>
               ))}
 
-              {duplicateIndexes.size > 0 && (
-                <p className="field-hint field-hint-error">Nomes repetidos — ajuste antes de continuar.</p>
-              )}
-              {duplicateIndexes.size === 0 && validNames.length < 2 && (
-                <p className="field-hint">Adicione pelo menos 2 jogadores.</p>
-              )}
-              {playerNames.length >= MAX_PLAYERS && (
-                <p className="field-hint">Máximo de {MAX_PLAYERS} jogadores.</p>
+              <div className="player-row">
+                <label className="sr-only" htmlFor="join-name">
+                  Seu nome
+                </label>
+                <input
+                  id="join-name"
+                  value={joinName}
+                  placeholder="Seu nome"
+                  maxLength={30}
+                  disabled={match.players.length >= MAX_PLAYERS}
+                  onChange={(e) => setJoinName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleJoin();
+                    }
+                  }}
+                />
+                <button disabled={loading || !joinName.trim() || match.players.length >= MAX_PLAYERS} onClick={handleJoin}>
+                  {loading ? "Entrando…" : "Entrar"}
+                </button>
+              </div>
+
+              {match.players.length >= MAX_PLAYERS && (
+                <p className="field-hint">Sala cheia — máximo de {MAX_PLAYERS} jogadores.</p>
               )}
 
-              <button type="button" onClick={addPlayerField} disabled={playerNames.length >= MAX_PLAYERS}>
-                + Adicionar jogador
-              </button>
-              <button disabled={loading || !canStart} onClick={handleStart}>
-                {loading ? "Iniciando…" : "Iniciar jogo"}
-              </button>
+              {isHost(match.code) && (
+                <button disabled={loading || match.players.length < 2} onClick={handleStart}>
+                  {loading
+                    ? "Iniciando…"
+                    : match.players.length < 2
+                      ? "Iniciar jogo (mínimo 2)"
+                      : "Iniciar jogo"}
+                </button>
+              )}
+
               <div className="link-hint">
                 <code>{window.location.href}</code>
                 <button type="button" onClick={handleCopyLink}>
@@ -396,7 +376,7 @@ export default function App() {
                 </div>
               )}
 
-              {shotAnnounce && (
+              {match.shotTimer.pendingPlayer && (
                 <button
                   type="button"
                   className="shot-announce"
@@ -404,16 +384,18 @@ export default function App() {
                   role="status"
                   aria-live="assertive"
                 >
-                  <span className="shot-announce-title">Hora do shot, {shotAnnounce}!</span>
+                  <span className="shot-announce-title">Hora do shot, {match.shotTimer.pendingPlayer.name}!</span>
                   <span className="shot-announce-hint">Toque para continuar</span>
                 </button>
               )}
 
               <div className="game-header">
                 <p className="round">Rodada {match.currentRound}</p>
-                <span className={`shot-timer ${shotTimeLeft <= 30 ? "shot-timer-urgent" : ""}`}>
-                  Shot em {formatTime(shotTimeLeft)}
-                </span>
+                {displaySeconds !== null && (
+                  <span className={`shot-timer ${displaySeconds <= 30 ? "shot-timer-urgent" : ""}`}>
+                    Shot em {formatTime(displaySeconds)}
+                  </span>
+                )}
               </div>
               <div className="current-player">
                 <span
@@ -441,11 +423,15 @@ export default function App() {
               <PlayingCard
                 card={match.revealedCard}
                 revealed={!!match.revealedCard}
-                onReveal={handleReveal}
-                loading={loading}
+                onReveal={canAct ? handleReveal : () => {}}
+                loading={loading || !canAct}
               />
 
-              {match.revealedCard?.rank === "K" && (
+              {!canAct && !match.revealedCard && (
+                <p className="field-hint waiting-hint">Aguardando {match.currentPlayer?.name} jogar…</p>
+              )}
+
+              {canAct && match.revealedCard?.rank === "K" && (
                 <div className="house-rule-form">
                   <label className="sr-only" htmlFor="house-rule-input">
                     Nova regra da rodada
@@ -463,7 +449,7 @@ export default function App() {
                 </div>
               )}
 
-              {match.revealedCard && (
+              {canAdvance && match.revealedCard && (
                 <button disabled={loading} onClick={handleAdvance}>
                   {loading ? "Avançando…" : "Próximo jogador"}
                 </button>

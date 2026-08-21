@@ -244,15 +244,8 @@ button:disabled {
   font-size: 0.85rem;
 }
 
-.remove-player {
-  background: transparent;
-  border: 2px solid var(--border);
-  color: var(--muted);
-  width: 2.5rem;
-  padding: 0.75rem 0;
-  font-size: 1.1rem;
-  line-height: 1;
-  flex-shrink: 0;
+.joined-name {
+  font-weight: 600;
 }
 
 .field-hint {
@@ -261,8 +254,9 @@ button:disabled {
   color: var(--muted);
 }
 
-.field-hint-error {
-  color: var(--suit-hearts);
+.waiting-hint {
+  text-align: center;
+  padding: 0.5rem 0;
 }
 
 .link-hint {

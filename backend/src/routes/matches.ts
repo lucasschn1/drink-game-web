@@ -2,9 +2,13 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma.js";
 import { generateMatchCode } from "../lib/code.js";
+import { generateToken } from "../lib/token.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 
 export const matchesRouter = Router();
+
+const SHOT_TIMER_SECONDS = 180;
+const MAX_PLAYERS = 15;
 
 // Match creation is the only endpoint with no natural rate limit from game
 // flow (reveal/advance are gated by clicks a few times per minute at most).
@@ -26,11 +30,38 @@ function shuffle<T>(items: T[]): T[] {
   return arr;
 }
 
+function getToken(req: { header(name: string): string | undefined }): string | null {
+  return req.header("x-player-token") ?? null;
+}
+
+// If the shot-roulette countdown has expired and nothing is pending yet,
+// atomically pick a random player and mark them pending — race-safe across
+// many devices polling concurrently, since only one concurrent
+// `WHERE pendingShotPlayerId IS NULL` can ever apply. No server-side
+// scheduler needed: this runs as a side effect of normal polling.
+// `Match` is a reserved word in MySQL 8 (MATCH() AGAINST()), hence backticks.
+async function maybeTriggerShotTimer(matchId: string) {
+  await prisma.$executeRaw`
+    UPDATE \`Match\` m
+    JOIN (SELECT id FROM Player WHERE matchId = ${matchId} ORDER BY RAND() LIMIT 1) p ON 1 = 1
+    SET m.pendingShotPlayerId = p.id
+    WHERE m.id = ${matchId}
+      AND m.pendingShotPlayerId IS NULL
+      AND m.shotTimerEndsAt IS NOT NULL
+      AND m.shotTimerEndsAt <= NOW()
+  `;
+}
+
 async function loadMatchState(matchId: string) {
+  await maybeTriggerShotTimer(matchId);
+
   const match = await prisma.match.findUnique({
     where: { id: matchId },
     include: {
-      players: { orderBy: { turnOrder: "asc" } },
+      players: {
+        orderBy: { turnOrder: "asc" },
+        select: { id: true, matchId: true, name: true, turnOrder: true },
+      },
       revealedCard: true,
     },
   });
@@ -39,6 +70,10 @@ async function loadMatchState(matchId: string) {
   const deckTotal = await prisma.matchDeckCard.count({ where: { matchId } });
   const deckDrawn = await prisma.matchDeckCard.count({ where: { matchId, drawn: true } });
   const currentPlayer = match.players[match.currentPlayerIndex] ?? null;
+  const pendingPlayer = match.players.find((p) => p.id === match.pendingShotPlayerId) ?? null;
+  const remainingSeconds = match.shotTimerEndsAt
+    ? Math.max(0, Math.ceil((match.shotTimerEndsAt.getTime() - Date.now()) / 1000))
+    : null;
 
   return {
     code: match.id,
@@ -50,19 +85,25 @@ async function loadMatchState(matchId: string) {
     revealedCard: match.revealedCard,
     houseRule: match.houseRule,
     deck: { total: deckTotal, drawn: deckDrawn },
+    // Seconds, not a timestamp — phone clocks routinely drift several
+    // seconds from the server, so the client only ever counts down a
+    // number it already has, resynced every poll.
+    shotTimer: { remainingSeconds, pendingPlayer },
   };
 }
 
-// POST /api/matches — create a new match, returns the join code/link.
+// POST /api/matches — create a new match, returns the join code/link and a
+// host token (given only here, needed to /start and to force-/advance).
 matchesRouter.post(
   "/",
   createMatchLimiter,
   asyncHandler(async (_req, res) => {
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = generateMatchCode();
+      const hostToken = generateToken();
       try {
-        const match = await prisma.match.create({ data: { id: code } });
-        res.status(201).json({ code: match.id });
+        const match = await prisma.match.create({ data: { id: code, hostToken } });
+        res.status(201).json({ code: match.id, hostToken });
         return;
       } catch (err: any) {
         if (err?.code === "P2002") continue; // code collision, retry
@@ -73,7 +114,7 @@ matchesRouter.post(
   }),
 );
 
-// GET /api/matches/:code — current state (used for initial load and refresh).
+// GET /api/matches/:code — current state (used for initial load and polling).
 matchesRouter.get(
   "/:code",
   asyncHandler(async (req, res) => {
@@ -83,20 +124,18 @@ matchesRouter.get(
   }),
 );
 
-// POST /api/matches/:code/players — set the full player list and turn order.
+// POST /api/matches/:code/join — add one player under their own name, return
+// a token only to them. Repeated calls from the same device (typing several
+// names in a row before starting) is how single-device pass-and-play still
+// works — that device just ends up holding every token it joined with.
 matchesRouter.post(
-  "/:code/players",
+  "/:code/join",
   asyncHandler(async (req, res) => {
     const code = req.params.code.toUpperCase();
-    const names: unknown = req.body?.names;
+    const name = String(req.body?.name ?? "").trim();
 
-    if (!Array.isArray(names) || names.length < 2 || names.length > 15) {
-      return res.status(400).json({ error: "Provide between 2 and 15 player names" });
-    }
-    const trimmed = names.map((n) => String(n).trim()).filter(Boolean);
-    if (trimmed.length !== names.length) {
-      return res.status(400).json({ error: "Player names cannot be empty" });
-    }
+    if (!name) return res.status(400).json({ error: "Name is required" });
+    if (name.length > 30) return res.status(400).json({ error: "Name is too long" });
 
     const match = await prisma.match.findUnique({ where: { id: code } });
     if (!match) return res.status(404).json({ error: "Match not found" });
@@ -104,29 +143,48 @@ matchesRouter.post(
       return res.status(409).json({ error: "Match already started" });
     }
 
-    await prisma.$transaction([
-      prisma.player.deleteMany({ where: { matchId: code } }),
-      prisma.player.createMany({
-        data: trimmed.map((name, i) => ({ matchId: code, name, turnOrder: i })),
-      }),
-    ]);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const existing = await prisma.player.findMany({ where: { matchId: code } });
+      if (existing.length >= MAX_PLAYERS) {
+        return res.status(400).json({ error: `Match is full (max ${MAX_PLAYERS} players)` });
+      }
+      if (existing.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+        return res.status(409).json({ error: "That name is already taken" });
+      }
 
-    const state = await loadMatchState(code);
-    res.json(state);
+      const token = generateToken();
+      try {
+        const player = await prisma.player.create({
+          data: { matchId: code, name, turnOrder: existing.length, token },
+        });
+        res.status(201).json({
+          player: { id: player.id, matchId: player.matchId, name: player.name, turnOrder: player.turnOrder },
+          token,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.code === "P2002") continue; // turnOrder race with another concurrent join, retry
+        throw err;
+      }
+    }
+    res.status(500).json({ error: "Failed to join — please try again" });
   }),
 );
 
 // POST /api/matches/:code/start — shuffle the deck and begin the first turn.
+// Requires the host token issued at creation.
 matchesRouter.post(
   "/:code/start",
   asyncHandler(async (req, res) => {
     const code = req.params.code.toUpperCase();
+    const token = getToken(req);
 
     const match = await prisma.match.findUnique({
       where: { id: code },
       include: { players: true },
     });
     if (!match) return res.status(404).json({ error: "Match not found" });
+    if (token !== match.hostToken) return res.status(403).json({ error: "Only the host can start the match" });
     if (match.status !== "WAITING") {
       return res.status(409).json({ error: "Match already started" });
     }
@@ -136,6 +194,7 @@ matchesRouter.post(
 
     const allCards = await prisma.card.findMany({ select: { id: true } });
     const shuffled = shuffle(allCards);
+    const shotTimerEndsAt = new Date(Date.now() + SHOT_TIMER_SECONDS * 1000);
 
     await prisma.$transaction([
       prisma.matchDeckCard.deleteMany({ where: { matchId: code } }),
@@ -144,7 +203,14 @@ matchesRouter.post(
       }),
       prisma.match.update({
         where: { id: code },
-        data: { status: "IN_PROGRESS", currentPlayerIndex: 0, currentRound: 1, revealedCardId: null },
+        data: {
+          status: "IN_PROGRESS",
+          currentPlayerIndex: 0,
+          currentRound: 1,
+          revealedCardId: null,
+          shotTimerEndsAt,
+          pendingShotPlayerId: null,
+        },
       }),
     ]);
 
@@ -153,7 +219,7 @@ matchesRouter.post(
   }),
 );
 
-type RevealOutcome = "not_found" | "not_in_progress" | "deck_empty" | "ok";
+type RevealOutcome = "not_found" | "not_in_progress" | "forbidden" | "deck_empty" | "ok";
 
 // POST /api/matches/:code/reveal — draw the next card for the current player's turn.
 //
@@ -161,20 +227,27 @@ type RevealOutcome = "not_found" | "not_in_progress" | "deck_empty" | "ok";
 // locked (`FOR UPDATE`), so two concurrent reveal requests for the same
 // match can't both pass the "not revealed yet" check and each draw a card —
 // the second one blocks until the first commits, then sees revealedCardId
-// already set and no-ops. `Match` is a reserved word in MySQL 8 (used by
-// MATCH() AGAINST()), so it has to be backtick-quoted in raw SQL.
+// already set and no-ops.
 matchesRouter.post(
   "/:code/reveal",
   asyncHandler(async (req, res) => {
     const code = req.params.code.toUpperCase();
+    const token = getToken(req);
 
     const outcome = await prisma.$transaction<RevealOutcome>(async (tx) => {
-      const rows = await tx.$queryRaw<{ status: string; revealedCardId: number | null }[]>`
-        SELECT status, revealedCardId FROM \`Match\` WHERE id = ${code} FOR UPDATE
+      const rows = await tx.$queryRaw<
+        { status: string; revealedCardId: number | null; currentPlayerIndex: number }[]
+      >`
+        SELECT status, revealedCardId, currentPlayerIndex FROM \`Match\` WHERE id = ${code} FOR UPDATE
       `;
       const locked = rows[0];
       if (!locked) return "not_found";
       if (locked.status !== "IN_PROGRESS") return "not_in_progress";
+
+      const players = await tx.player.findMany({ where: { matchId: code }, orderBy: { turnOrder: "asc" } });
+      const currentPlayer = players[locked.currentPlayerIndex];
+      if (!currentPlayer || currentPlayer.token !== token) return "forbidden";
+
       if (locked.revealedCardId) return "ok"; // already revealed this turn — idempotent
 
       let next = await tx.matchDeckCard.findFirst({
@@ -204,6 +277,7 @@ matchesRouter.post(
 
     if (outcome === "not_found") return res.status(404).json({ error: "Match not found" });
     if (outcome === "not_in_progress") return res.status(409).json({ error: "Match is not in progress" });
+    if (outcome === "forbidden") return res.status(403).json({ error: "Not your turn" });
     if (outcome === "deck_empty") return res.status(500).json({ error: "Deck is empty" });
 
     const state = await loadMatchState(code);
@@ -216,16 +290,24 @@ matchesRouter.post(
   "/:code/house-rule",
   asyncHandler(async (req, res) => {
     const code = req.params.code.toUpperCase();
+    const token = getToken(req);
     const text: unknown = req.body?.text;
 
     if (typeof text !== "string" || !text.trim() || text.trim().length > 200) {
       return res.status(400).json({ error: "Provide a rule up to 200 characters" });
     }
 
-    const match = await prisma.match.findUnique({ where: { id: code } });
+    const match = await prisma.match.findUnique({ where: { id: code }, include: { players: true } });
     if (!match) return res.status(404).json({ error: "Match not found" });
     if (match.status !== "IN_PROGRESS") {
       return res.status(409).json({ error: "Match is not in progress" });
+    }
+
+    const currentPlayer = match.players
+      .sort((a, b) => a.turnOrder - b.turnOrder)
+      .find((p) => p.turnOrder === match.currentPlayerIndex);
+    if (!currentPlayer || currentPlayer.token !== token) {
+      return res.status(403).json({ error: "Not your turn" });
     }
 
     await prisma.match.update({ where: { id: code }, data: { houseRule: text.trim() } });
@@ -236,19 +318,27 @@ matchesRouter.post(
 );
 
 // POST /api/matches/:code/advance — close the current turn and move to the next player.
+// Accepts either the current player's own token, or the host token (lets the
+// host force-skip someone who lost their token — dead phone, closed private
+// tab — since there's no reconnect flow yet).
 matchesRouter.post(
   "/:code/advance",
   asyncHandler(async (req, res) => {
     const code = req.params.code.toUpperCase();
+    const token = getToken(req);
 
     const match = await prisma.match.findUnique({
       where: { id: code },
-      include: { players: true },
+      include: { players: { orderBy: { turnOrder: "asc" } } },
     });
     if (!match) return res.status(404).json({ error: "Match not found" });
     if (match.status !== "IN_PROGRESS") {
       return res.status(409).json({ error: "Match is not in progress" });
     }
+
+    const currentPlayer = match.players[match.currentPlayerIndex];
+    const authorized = !!token && (token === currentPlayer?.token || token === match.hostToken);
+    if (!authorized) return res.status(403).json({ error: "Not your turn" });
 
     const playerCount = match.players.length;
     const nextIndex = (match.currentPlayerIndex + 1) % playerCount;
@@ -267,6 +357,26 @@ matchesRouter.post(
     });
 
     const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);
+
+// POST /api/matches/:code/shot/ack — dismiss the shot-roulette alert and
+// restart the 3:00 countdown. No per-player auth — anyone can tap it, it's a
+// shared party moment, not a turn action. A second/late tap is a no-op.
+matchesRouter.post(
+  "/:code/shot/ack",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+
+    await prisma.$executeRaw`
+      UPDATE \`Match\`
+      SET pendingShotPlayerId = NULL, shotTimerEndsAt = DATE_ADD(NOW(), INTERVAL ${SHOT_TIMER_SECONDS} SECOND)
+      WHERE id = ${code} AND pendingShotPlayerId IS NOT NULL
+    `;
+
+    const state = await loadMatchState(code);
+    if (!state) return res.status(404).json({ error: "Match not found" });
     res.json(state);
   }),
 );
