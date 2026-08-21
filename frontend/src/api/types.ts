@@ -16,6 +16,11 @@ export interface Card {
   text: string;
 }
 
+export interface ShotTimer {
+  remainingSeconds: number | null;
+  pendingPlayer: Player | null;
+}
+
 export interface MatchState {
   code: string;
   status: MatchStatus;
@@ -26,4 +31,5 @@ export interface MatchState {
   revealedCard: Card | null;
   houseRule: string | null;
   deck: { total: number; drawn: number };
+  shotTimer: ShotTimer;
 }

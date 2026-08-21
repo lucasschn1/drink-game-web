@@ -1,10 +1,11 @@
 import type { MatchState } from "./types";
+import { getHostToken, getTokenFor } from "../lib/identity";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
   });
   if (!res.ok) {
@@ -14,29 +15,45 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function authHeaders(token: string | null): HeadersInit {
+  return token ? { "X-Player-Token": token } : {};
+}
+
 export const api = {
-  createMatch: () => request<{ code: string }>("/matches", { method: "POST" }),
+  createMatch: () => request<{ code: string; hostToken: string }>("/matches", { method: "POST" }),
 
   getMatch: (code: string) => request<MatchState>(`/matches/${code}`),
 
-  setPlayers: (code: string, names: string[]) =>
-    request<MatchState>(`/matches/${code}/players`, {
-      method: "POST",
-      body: JSON.stringify({ names }),
-    }),
+  join: (code: string, name: string) =>
+    request<{ player: { id: number; matchId: string; name: string; turnOrder: number }; token: string }>(
+      `/matches/${code}/join`,
+      { method: "POST", body: JSON.stringify({ name }) },
+    ),
 
   startMatch: (code: string) =>
-    request<MatchState>(`/matches/${code}/start`, { method: "POST" }),
+    request<MatchState>(`/matches/${code}/start`, {
+      method: "POST",
+      headers: authHeaders(getHostToken(code)),
+    }),
 
-  revealCard: (code: string) =>
-    request<MatchState>(`/matches/${code}/reveal`, { method: "POST" }),
+  revealCard: (code: string, currentPlayerId: number | undefined) =>
+    request<MatchState>(`/matches/${code}/reveal`, {
+      method: "POST",
+      headers: authHeaders(getTokenFor(code, currentPlayerId)),
+    }),
 
-  advanceTurn: (code: string) =>
-    request<MatchState>(`/matches/${code}/advance`, { method: "POST" }),
+  advanceTurn: (code: string, currentPlayerId: number | undefined) =>
+    request<MatchState>(`/matches/${code}/advance`, {
+      method: "POST",
+      headers: authHeaders(getTokenFor(code, currentPlayerId) ?? getHostToken(code)),
+    }),
 
-  setHouseRule: (code: string, text: string) =>
+  setHouseRule: (code: string, text: string, currentPlayerId: number | undefined) =>
     request<MatchState>(`/matches/${code}/house-rule`, {
       method: "POST",
+      headers: authHeaders(getTokenFor(code, currentPlayerId)),
       body: JSON.stringify({ text }),
     }),
+
+  shotAck: (code: string) => request<MatchState>(`/matches/${code}/shot/ack`, { method: "POST" }),
 };
