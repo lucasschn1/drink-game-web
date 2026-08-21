@@ -3,6 +3,7 @@ import { api } from "./api/client";
 import type { MatchState } from "./api/types";
 import { PlayingCard } from "./components/PlayingCard";
 import { HowToPlayModal } from "./components/HowToPlayModal";
+import { unlockAudio, playShotAlert } from "./lib/sound";
 import "./App.css";
 
 type Screen = "home" | "players" | "game";
@@ -118,6 +119,7 @@ export default function App() {
         const chosen = match.players[Math.floor(Math.random() * match.players.length)];
         setShotAnnounce(chosen.name);
         navigator.vibrate?.([100, 80, 100, 80, 100]);
+        playShotAlert();
         return 0;
       });
     }, 1000);
@@ -169,6 +171,7 @@ export default function App() {
     if (!match || !canStart) return;
     setLoading(true);
     setError(null);
+    unlockAudio(); // real click, safe place to unlock for the shot timer later
     try {
       await api.setPlayers(match.code, validNames);
       const state = await api.startMatch(match.code);
@@ -187,6 +190,7 @@ export default function App() {
     if (!match) return;
     setLoading(true);
     setError(null);
+    unlockAudio();
     try {
       const state = await api.revealCard(match.code);
       setMatch(state);
