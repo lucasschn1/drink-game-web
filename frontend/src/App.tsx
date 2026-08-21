@@ -21,11 +21,18 @@ function getInitial(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
 
-// Same four flat poster colors used on the cards, cycled by player index so
-// each avatar reads as consistently "that player's color" all game long.
-const AVATAR_COLORS = ["var(--suit-clubs)", "var(--suit-diamonds)", "var(--suit-hearts)", "var(--suit-spades)"];
+// Same four suit colors used on the cards, cycled by player index so each
+// avatar reads as consistently "that player's color" all game long. Text
+// color is paired per swatch — the mustard diamond tone needs dark text,
+// the rest read better with white.
+const AVATAR_COLORS: { bg: string; fg: string }[] = [
+  { bg: "var(--suit-clubs)", fg: "#fff" },
+  { bg: "var(--suit-diamonds)", fg: "var(--fg)" },
+  { bg: "var(--suit-hearts)", fg: "#fff" },
+  { bg: "var(--suit-spades)", fg: "#fff" },
+];
 
-function getAvatarColor(index: number): string {
+function getAvatarColor(index: number): { bg: string; fg: string } {
   return AVATAR_COLORS[index % AVATAR_COLORS.length];
 }
 
@@ -276,7 +283,7 @@ export default function App() {
                 <div className="player-row" key={i}>
                   <span
                     className="avatar avatar-small"
-                    style={{ background: getAvatarColor(i) }}
+                    style={{ background: getAvatarColor(i).bg, color: getAvatarColor(i).fg }}
                     aria-hidden="true"
                   >
                     {name.trim() ? getInitial(name) : i + 1}
@@ -351,7 +358,10 @@ export default function App() {
               <div className="current-player">
                 <span
                   className="avatar"
-                  style={{ background: getAvatarColor(match.currentPlayerIndex) }}
+                  style={{
+                    background: getAvatarColor(match.currentPlayerIndex).bg,
+                    color: getAvatarColor(match.currentPlayerIndex).fg,
+                  }}
                 >
                   {getInitial(match.currentPlayer?.name ?? "")}
                 </span>

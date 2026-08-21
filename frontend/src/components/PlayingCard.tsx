@@ -31,6 +31,29 @@ function SuitIcon({ suit, className }: { suit: Suit; className?: string }) {
   );
 }
 
+// Heraldic shield + gem, for the card back — gives it "deck of cards" weight
+// instead of a bare wordmark.
+function CrestEmblem({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 120" className={className} aria-hidden="true">
+      <path
+        d="M50 6 L90 20 L90 55 C90 85 72 105 50 114 C28 105 10 85 10 55 L10 20 Z"
+        fill="var(--bg)"
+        stroke="var(--bg)"
+        strokeWidth="2.5"
+      />
+      <path
+        d="M50 15 L82 26 L82 55 C82 79 67 96 50 104 C33 96 18 79 18 55 L18 26 Z"
+        fill="none"
+        stroke="var(--fg)"
+        strokeWidth="1"
+        opacity="0.5"
+      />
+      <path d="M50 38 L64 55 L50 72 L36 55 Z" fill="var(--suit-hearts)" />
+    </svg>
+  );
+}
+
 interface PlayingCardProps {
   card: Card | null;
   revealed: boolean;
@@ -51,8 +74,11 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
         aria-label={revealed ? undefined : "Revelar carta"}
       >
         <div className="playing-card-face playing-card-back">
-          <span className="back-mark">?</span>
-          <span className="back-wordmark">DRINK GAME</span>
+          <div className="back-frame">
+            <div className="back-lattice" />
+            <CrestEmblem className="back-crest" />
+            <span className="back-wordmark">Drink Game</span>
+          </div>
         </div>
 
         <div className={`playing-card-face playing-card-front ${suitClass}`}>

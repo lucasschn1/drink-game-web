@@ -2,7 +2,7 @@
   max-width: 480px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
-  font-family: "Manrope", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   color: var(--fg);
   width: 100%;
   flex: 1;
@@ -10,7 +10,7 @@
 
 h1,
 h2 {
-  font-family: "Bricolage Grotesque", "Manrope", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-weight: 800;
   margin: 0;
 }
@@ -44,7 +44,7 @@ button {
   padding: 0.75rem;
   font-size: 1rem;
   font-family: inherit;
-  border-radius: 6px;
+  border-radius: 4px;
   border: 2px solid transparent;
 }
 
@@ -52,6 +52,7 @@ input {
   background: var(--surface);
   border-color: var(--border);
   color: var(--fg);
+  font-weight: 500;
 }
 
 input::placeholder {
@@ -60,7 +61,7 @@ input::placeholder {
 
 input:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--suit-clubs);
+  outline: 2px solid var(--suit-spades);
   outline-offset: 2px;
 }
 
@@ -71,19 +72,33 @@ input.input-error {
 button {
   cursor: pointer;
   background: var(--primary);
-  color: white;
+  color: #fff;
   font-weight: 700;
   border-color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+button:not(:disabled):hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 
 button.secondary {
   background: transparent;
-  color: var(--fg);
-  border-color: var(--border);
+  color: var(--secondary);
+  border-color: var(--secondary);
+}
+
+button.secondary:not(:disabled):hover {
+  background: var(--secondary);
+  color: var(--bg);
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -94,9 +109,9 @@ button:disabled {
   gap: 0.5rem;
   background: var(--suit-hearts);
   border: none;
-  color: #fdf3ef;
+  color: #fff;
   padding: 0.6rem 0.85rem;
-  border-radius: 6px;
+  border-radius: 4px;
   margin-bottom: 1rem;
   font-weight: 600;
 }
@@ -138,10 +153,10 @@ button:disabled {
 .card-fan span {
   width: 3rem;
   height: 4.2rem;
-  border-radius: 6px;
-  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border: 2px solid var(--fg);
   margin: 0 -0.6rem;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 16px rgba(23, 23, 23, 0.18);
 }
 
 .card-fan span:nth-child(1) {
@@ -167,7 +182,8 @@ button:disabled {
 }
 
 .hero h1 {
-  font-size: 2.5rem;
+  font-size: 2.6rem;
+  font-weight: 900;
   letter-spacing: -0.02em;
 }
 
@@ -194,7 +210,8 @@ button:disabled {
 }
 
 .player-count {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: "Inter", monospace;
+  font-weight: 700;
   font-size: 0.85rem;
   color: var(--muted);
 }
@@ -216,9 +233,8 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-family: "IBM Plex Mono", monospace;
-  color: #fff;
+  font-weight: 800;
+  font-family: "Inter", sans-serif;
   flex-shrink: 0;
 }
 
@@ -262,14 +278,15 @@ button:disabled {
   word-break: break-all;
   color: var(--muted);
   background: var(--surface);
-  border-radius: 6px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
   padding: 0.5rem 0.65rem;
 }
 
 /* --- game --- */
 
 .round {
-  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
   font-size: 0.8rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
@@ -296,11 +313,11 @@ button:disabled {
   justify-content: center;
   text-align: center;
   padding: 2rem;
-  font-family: "Bricolage Grotesque", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: 1.8rem;
-  font-weight: 800;
+  font-weight: 900;
   background: var(--bg);
-  border-radius: 10px;
+  border-radius: 4px;
   animation: turn-announce-fade 1.4s ease forwards;
   pointer-events: none;
 }
@@ -329,20 +346,23 @@ button:disabled {
 
 .house-rule {
   background: var(--suit-clubs);
-  color: #f2fbfa;
-  border-radius: 6px;
+  color: #fff;
+  border-radius: 4px;
   padding: 0.6rem 0.8rem;
   font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .last-card-badge {
   align-self: center;
-  background: var(--primary);
-  color: white;
+  background: var(--fg);
+  color: var(--bg);
   border-radius: 999px;
   padding: 0.3rem 0.9rem;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   margin: 0;
 }
 
