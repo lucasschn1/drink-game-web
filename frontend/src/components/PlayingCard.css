@@ -3,6 +3,26 @@
   justify-content: center;
   perspective: 1400px;
   margin: 0.5rem 0;
+  transition: transform 0.35s ease;
+}
+
+/* Lift-on-hover is gated to devices that actually have a hover-capable
+   pointer (mouse/trackpad) — on iOS touch this media query never matches,
+   so there's no lingering "sticky hover" after a tap lifts the finger. */
+@media (hover: hover) and (pointer: fine) {
+  .playing-card-scene:has(.playing-card:not(.flipped):not(:disabled):hover),
+  .playing-card-scene:has(.playing-card:not(.flipped):focus-visible) {
+    transform: translateY(-5px);
+  }
+
+  .playing-card-scene:has(.playing-card:not(.flipped):not(:disabled):hover)
+    .playing-card-face,
+  .playing-card-scene:has(.playing-card:not(.flipped):focus-visible)
+    .playing-card-face {
+    box-shadow:
+      0 16px 24px rgba(23, 23, 23, 0.2),
+      0 4px 8px rgba(23, 23, 23, 0.12);
+  }
 }
 
 .playing-card {
@@ -20,6 +40,19 @@
   transform-style: preserve-3d;
   transition: transform 0.6s cubic-bezier(0.4, 0.15, 0.2, 1);
   cursor: pointer;
+  /* iOS Safari: kill the gray tap-highlight flash and the copy/share
+     callout so the button reads like native app chrome, not a web page. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* Immediate press feedback for touch — a quick scale-down on tap, since
+   :hover never fires on iOS and the card would otherwise give no response
+   until the 0.6s flip completes. Scoped to the back face only: once
+   revealed the button has no onClick, so there's nothing to press. */
+.playing-card:not(.flipped):not(:disabled):active .playing-card-back {
+  transform: rotateY(0deg) scale(0.97);
+  transition: transform 0.15s ease;
 }
 
 .playing-card.flipped {
@@ -42,9 +75,19 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* box-shadow (not filter: drop-shadow) — cheaper to composite alongside
+     the preserve-3d flip, which matters more on older iOS Safari. */
+  box-shadow:
+    0 10px 16px rgba(23, 23, 23, 0.16),
+    0 2px 5px rgba(23, 23, 23, 0.1);
+  transition: box-shadow 0.35s ease;
+  /* iOS Safari: prevent long-press text selection / copy callout on the
+     rule text and rank glyphs inside. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-/* --- back: solid ink card with a fine cream lattice + crest --- */
+/* --- back: solid ink card, heraldic crest, double ornamental frame --- */
 
 .playing-card-back {
   transform: rotateY(0deg);
@@ -52,7 +95,7 @@
   border: 2px solid var(--fg);
   align-items: center;
   justify-content: center;
-  padding: 0.6rem;
+  padding: 0.55rem;
 }
 
 .back-frame {
@@ -65,9 +108,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   overflow: hidden;
 }
+
 
 .back-lattice {
   position: absolute;
@@ -81,20 +125,65 @@
     repeating-linear-gradient(-45deg, rgba(244, 239, 230, 0.14) 0 1.5px, transparent 1.5px 16px);
 }
 
+/* Four corner brackets echoing a heraldic/engraved deck back — each corner
+   is just "which edge(s) it sits on" + "which border side(s) face inward",
+   so those two facts are shared across the matching pairs instead of
+   restating all four position/border values in each of the four rules. */
+.back-corner {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-style: solid;
+  border-color: var(--bg);
+  border-width: 0;
+  opacity: 0.6;
+}
+
+.back-corner-tl,
+.back-corner-tr {
+  top: 12px;
+  border-top-width: 1px;
+}
+
+.back-corner-bl,
+.back-corner-br {
+  bottom: 12px;
+  border-bottom-width: 1px;
+}
+
+.back-corner-tl,
+.back-corner-bl {
+  left: 12px;
+  border-left-width: 1px;
+}
+
+.back-corner-tr,
+.back-corner-br {
+  right: 12px;
+  border-right-width: 1px;
+}
+
 .back-crest {
   position: relative;
-  width: 40%;
+  width: 38%;
   height: auto;
 }
 
 .back-wordmark {
   position: relative;
-  font-family: "Inter", sans-serif;
+  display: block;
+  width: 100%;
+  font-family: "Cinzel Decorative", "Inter", serif;
   font-weight: 700;
-  font-size: clamp(0.7rem, 3.2vw, 0.9rem);
-  letter-spacing: 0.24em;
+  font-size: clamp(0.52rem, 2.2vw, 0.68rem);
+  letter-spacing: 0.34em;
+  text-align: center;
   text-transform: uppercase;
   color: var(--bg);
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--bg);
+  /* nudge for the extra letter-spacing so the block still reads centered */
+  text-indent: 0.34em;
 }
 
 /* --- front: full-bleed flat suit color + bold central rank --- */
@@ -103,8 +192,52 @@
   transform: rotateY(180deg);
   background: var(--card-bg);
   color: var(--card-fg);
-  border: 2px solid rgba(23, 23, 23, 0.15);
+  border: 2.5px solid rgba(23, 23, 23, 0.22);
   justify-content: space-between;
+}
+
+/* Inset hairline frame — front mirrors the back's double-border language.
+   Shared geometry lives in one rule; only the border color/opacity (which
+   face's ink they're drawn in) differs per side. */
+.back-frame::before,
+.playing-card-front::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.back-frame::before {
+  border-color: var(--bg);
+  opacity: 0.55;
+}
+
+.playing-card-front::before {
+  border-color: var(--card-fg);
+  opacity: 0.22;
+}
+
+.front-fleuron {
+  position: absolute;
+  z-index: 1;
+  width: clamp(0.7rem, 2.6vw, 0.85rem);
+  height: clamp(0.7rem, 2.6vw, 0.85rem);
+  color: var(--card-fg);
+  opacity: 0.55;
+}
+
+.front-fleuron-tl {
+  top: 0.55rem;
+  right: 0.65rem;
+}
+
+.front-fleuron-br {
+  bottom: 0.55rem;
+  left: 0.65rem;
+  transform: rotate(180deg);
 }
 
 .suit-hearts {
@@ -148,15 +281,22 @@
 }
 
 .rank {
-  font-family: "Inter", sans-serif;
-  font-weight: 800;
-  font-size: clamp(0.95rem, 4vw, 1.2rem);
+  font-family: "Cinzel Decorative", "Inter", serif;
+  font-weight: 700;
+  font-size: clamp(0.85rem, 3.6vw, 1.05rem);
+}
+
+.corner-divider {
+  width: 14px;
+  height: 1px;
+  margin: 0.2rem 0;
+  background: currentColor;
+  opacity: 0.4;
 }
 
 .corner-suit {
   width: clamp(0.75rem, 3vw, 0.95rem);
   height: clamp(0.75rem, 3vw, 0.95rem);
-  margin-top: 1px;
 }
 
 .poster-body {
@@ -166,28 +306,46 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
+  gap: 0.1rem;
+}
+
+/* naipe como marca d'água — reforça o naipe como elemento gráfico sem
+   competir com o número, mesma cor do texto da carta, opacidade baixa */
+.poster-suit-watermark {
+  position: absolute;
+  z-index: 0;
+  width: 78%;
+  height: 78%;
+  color: var(--card-fg);
+  opacity: 0.1;
 }
 
 .poster-rank {
-  font-family: "Inter", sans-serif;
+  position: relative;
+  z-index: 1;
+  font-family: "Cinzel Decorative", "Inter", serif;
   font-weight: 900;
-  font-size: clamp(4.5rem, 24vw, 7rem);
-  line-height: 0.85;
-  letter-spacing: -0.03em;
+  font-size: clamp(5.4rem, 28vw, 8.4rem);
+  line-height: 0.82;
+  letter-spacing: 0;
 }
 
 .poster-suit {
-  width: clamp(1.75rem, 8vw, 2.5rem);
-  height: clamp(1.75rem, 8vw, 2.5rem);
+  position: relative;
+  z-index: 1;
+  width: clamp(1.5rem, 6.5vw, 2.15rem);
+  height: clamp(1.5rem, 6.5vw, 2.15rem);
+  margin-top: 0.2rem;
 }
 
 .rule-text {
+  position: relative;
   margin: 0;
   background: var(--fg);
   color: var(--bg);
   text-align: center;
-  padding: 0.75rem 0.9rem;
+  padding: 0.7rem 0.9rem 0.75rem;
+  font-family: "Inter", sans-serif;
   font-weight: 500;
   font-size: clamp(0.78rem, 3.4vw, 0.9rem);
   line-height: 1.35;
@@ -195,6 +353,34 @@
      would otherwise cascade into this sentence-case rule text. */
   text-transform: none;
   letter-spacing: normal;
+}
+
+/* small medieval ornament — line, diamond, line — in place of a plain rule */
+.rule-text::before {
+  content: "";
+  display: block;
+  width: 46px;
+  height: 1px;
+  margin: 0 auto 0.55rem;
+  background: linear-gradient(
+    to right,
+    var(--bg) 0 16px,
+    transparent 16px 30px,
+    var(--bg) 30px 46px
+  );
+  opacity: 0.4;
+}
+
+.rule-text::after {
+  content: "";
+  position: absolute;
+  top: 0.7rem;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  background: var(--bg);
+  opacity: 0.55;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
