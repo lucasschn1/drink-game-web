@@ -382,3 +382,79 @@ matchesRouter.post(
     res.json(state);
   }),
 );
+
+// POST /api/matches/:code/end — host ends the match early, any status.
+matchesRouter.post(
+  "/:code/end",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const token = getToken(req);
+
+    const match = await prisma.match.findUnique({ where: { id: code } });
+    if (!match) return res.status(404).json({ error: "Match not found" });
+    if (!token || !match.hostToken || token !== match.hostToken) {
+      return res.status(403).json({ error: "Only the host can end the match" });
+    }
+
+    await prisma.match.update({ where: { id: code }, data: { status: "FINISHED" } });
+
+    const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);
+
+// POST /api/matches/:code/kick — host removes a player. Before the match
+// starts this is a plain removal; mid-match it also has to re-densify
+// everyone's turnOrder (kept contiguous from 0 since /join and /advance both
+// assume that) and shift currentPlayerIndex so the same *player* stays "up"
+// after the removal, not just the same numeric slot.
+matchesRouter.post(
+  "/:code/kick",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const token = getToken(req);
+    const playerId = Number(req.body?.playerId);
+
+    const match = await prisma.match.findUnique({
+      where: { id: code },
+      include: { players: { orderBy: { turnOrder: "asc" } } },
+    });
+    if (!match) return res.status(404).json({ error: "Match not found" });
+    if (!token || !match.hostToken || token !== match.hostToken) {
+      return res.status(403).json({ error: "Only the host can remove a player" });
+    }
+    if (match.status === "FINISHED") return res.status(409).json({ error: "Match already finished" });
+
+    const target = match.players.find((p) => p.id === playerId);
+    if (!target) return res.status(404).json({ error: "Player not found" });
+
+    const remaining = match.players.filter((p) => p.id !== playerId);
+    if (match.status === "IN_PROGRESS" && remaining.length < 2) {
+      return res.status(400).json({ error: "Can't remove — the match needs at least 2 players" });
+    }
+
+    const wasCurrent = match.status === "IN_PROGRESS" && target.turnOrder === match.currentPlayerIndex;
+    let nextIndex = match.currentPlayerIndex;
+    if (match.status === "IN_PROGRESS" && target.turnOrder < match.currentPlayerIndex) nextIndex -= 1;
+    if (remaining.length > 0) nextIndex = ((nextIndex % remaining.length) + remaining.length) % remaining.length;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.player.delete({ where: { id: playerId } });
+      // Re-densify turnOrder in original relative order — safe to do as
+      // sequential updates because each new index is always <= the old one,
+      // so a target slot is never still occupied by a not-yet-updated row.
+      for (let i = 0; i < remaining.length; i++) {
+        await tx.player.update({ where: { id: remaining[i].id }, data: { turnOrder: i } });
+      }
+      if (match.status === "IN_PROGRESS") {
+        await tx.match.update({
+          where: { id: code },
+          data: { currentPlayerIndex: nextIndex, ...(wasCurrent ? { revealedCardId: null } : {}) },
+        });
+      }
+    });
+
+    const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);

@@ -97,6 +97,16 @@ button.secondary:not(:disabled):hover {
   color: var(--bg);
 }
 
+button.danger {
+  background: var(--suit-hearts);
+  border-color: var(--suit-hearts);
+  color: #fff;
+}
+
+button.danger:not(:disabled):hover {
+  filter: brightness(0.88);
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -246,6 +256,18 @@ button:disabled {
 
 .joined-name {
   font-weight: 600;
+  flex: 1;
+}
+
+.remove-player {
+  background: transparent;
+  border: 2px solid var(--border);
+  color: var(--muted);
+  width: 2.5rem;
+  padding: 0.5rem 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .field-hint {
@@ -283,6 +305,18 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.game-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.host-panel-trigger {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.7rem;
 }
 
 .round {

@@ -3,6 +3,7 @@ import { api } from "./api/client";
 import type { MatchState } from "./api/types";
 import { PlayingCard } from "./components/PlayingCard";
 import { HowToPlayModal } from "./components/HowToPlayModal";
+import { HostPanel } from "./components/HostPanel";
 import { unlockAudio, playShotAlert } from "./lib/sound";
 import { setHostToken, isHost, setPlayerToken, getTokenFor } from "./lib/identity";
 import "./App.css";
@@ -64,6 +65,7 @@ export default function App() {
   const [initialLoading, setInitialLoading] = useState(!!getCodeFromUrl());
   const [houseRuleInput, setHouseRuleInput] = useState("");
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showHostPanel, setShowHostPanel] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [turnAnnounce, setTurnAnnounce] = useState<string | null>(null);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
@@ -267,8 +269,36 @@ export default function App() {
     }
   }
 
+  async function handleKick(playerId: number) {
+    if (!match) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setMatch(await api.kickPlayer(match.code, playerId));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleEndMatch() {
+    if (!match) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setMatch(await api.endMatch(match.code));
+      setShowHostPanel(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const canAct = !!match && !!getTokenFor(match.code, match.currentPlayer?.id);
   const canAdvance = canAct || (!!match && isHost(match.code));
+  const amHost = !!match && isHost(match.code);
 
   return (
     <div className="app">
@@ -283,9 +313,37 @@ export default function App() {
 
       {showHowToPlay && <HowToPlayModal onClose={() => setShowHowToPlay(false)} />}
 
+      {showHostPanel && match && (
+        <HostPanel
+          players={match.players}
+          onClose={() => setShowHostPanel(false)}
+          onKick={handleKick}
+          onEndMatch={handleEndMatch}
+          loading={loading}
+        />
+      )}
+
       {initialLoading ? (
         <div className="screen">
           <p className="loading-hint">Carregando partida…</p>
+        </div>
+      ) : match?.status === "FINISHED" ? (
+        <div className="screen">
+          <div className="hero">
+            <h1>Partida encerrada</h1>
+            <p className="tagline">Valeu, galera! Bora começar outra?</p>
+          </div>
+          <div className="home-actions">
+            <button
+              onClick={() => {
+                window.history.replaceState({}, "", window.location.pathname);
+                setMatch(null);
+                setScreen("home");
+              }}
+            >
+              Nova partida
+            </button>
+          </div>
         </div>
       ) : (
         <>
@@ -337,6 +395,17 @@ export default function App() {
                     {getInitial(p.name)}
                   </span>
                   <span className="joined-name">{p.name}</span>
+                  {amHost && (
+                    <button
+                      type="button"
+                      className="remove-player"
+                      disabled={loading}
+                      aria-label={`Remover ${p.name}`}
+                      onClick={() => handleKick(p.id)}
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -412,11 +481,18 @@ export default function App() {
 
               <div className="game-header">
                 <p className="round">Rodada {match.currentRound}</p>
-                {displaySeconds !== null && (
-                  <span className={`shot-timer ${displaySeconds <= 30 ? "shot-timer-urgent" : ""}`}>
-                    Shot em {formatTime(displaySeconds)}
-                  </span>
-                )}
+                <div className="game-header-right">
+                  {displaySeconds !== null && (
+                    <span className={`shot-timer ${displaySeconds <= 30 ? "shot-timer-urgent" : ""}`}>
+                      Shot em {formatTime(displaySeconds)}
+                    </span>
+                  )}
+                  {amHost && (
+                    <button type="button" className="secondary host-panel-trigger" onClick={() => setShowHostPanel(true)}>
+                      Gerenciar
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="current-player">
                 <span
