@@ -37,6 +37,13 @@ function getAvatarColor(index: number): { bg: string; fg: string } {
 }
 
 const MAX_PLAYERS = 15;
+const SHOT_TIMER_SECONDS = 180;
+
+function formatTime(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 function splitPastedNames(text: string): string[] {
   return text
@@ -56,6 +63,8 @@ export default function App() {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [turnAnnounce, setTurnAnnounce] = useState<string | null>(null);
+  const [shotTimeLeft, setShotTimeLeft] = useState(SHOT_TIMER_SECONDS);
+  const [shotAnnounce, setShotAnnounce] = useState<string | null>(null);
 
   const previousPlayerId = useRef<number | null>(null);
   const playerInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -92,6 +101,27 @@ export default function App() {
     }
     previousPlayerId.current = currentId;
   }, [match?.currentPlayer?.id, match?.currentPlayer?.name]);
+
+  // Shot-roulette timer: runs continuously through the whole match,
+  // independent of whose turn it is or whether a card is on screen — purely
+  // client-side, no server round-trip, resets to 3:00 whenever it fires or
+  // whenever a fresh match starts.
+  useEffect(() => {
+    if (screen !== "game" || match?.status !== "IN_PROGRESS" || !match.players.length) return;
+
+    const interval = setInterval(() => {
+      setShotTimeLeft((prev) => {
+        if (prev > 1) return prev - 1;
+        const chosen = match.players[Math.floor(Math.random() * match.players.length)];
+        setShotAnnounce(chosen.name);
+        navigator.vibrate?.([80, 60, 80]);
+        setTimeout(() => setShotAnnounce(null), 1800);
+        return SHOT_TIMER_SECONDS;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [screen, match?.status, match?.players]);
 
   const duplicateIndexes = useMemo(() => {
     const seen = new Map<string, number>();
@@ -136,6 +166,7 @@ export default function App() {
       await api.setPlayers(match.code, validNames);
       const state = await api.startMatch(match.code);
       previousPlayerId.current = state.currentPlayer?.id ?? null;
+      setShotTimeLeft(SHOT_TIMER_SECONDS);
       setMatch(state);
       setScreen("game");
     } catch (err) {
@@ -354,7 +385,18 @@ export default function App() {
                 </div>
               )}
 
-              <p className="round">Rodada {match.currentRound}</p>
+              {shotAnnounce && (
+                <div className="shot-announce" role="status" aria-live="assertive">
+                  Hora do shot, {shotAnnounce}!
+                </div>
+              )}
+
+              <div className="game-header">
+                <p className="round">Rodada {match.currentRound}</p>
+                <span className={`shot-timer ${shotTimeLeft <= 30 ? "shot-timer-urgent" : ""}`}>
+                  Shot em {formatTime(shotTimeLeft)}
+                </span>
+              </div>
               <div className="current-player">
                 <span
                   className="avatar"
