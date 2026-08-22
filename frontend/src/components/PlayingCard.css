@@ -238,13 +238,13 @@
 }
 
 .front-fleuron-tl {
-  top: 0.55rem;
-  right: 0.65rem;
+  top: 1.05rem;
+  right: 1.15rem;
 }
 
 .front-fleuron-br {
-  bottom: 0.55rem;
-  left: 0.65rem;
+  bottom: 1.05rem;
+  left: 1.15rem;
   transform: rotate(180deg);
 }
 
@@ -279,13 +279,13 @@
 }
 
 .corner-top {
-  top: 0.7rem;
-  left: 0.8rem;
+  top: 1.3rem;
+  left: 1.35rem;
 }
 
 .corner-bottom {
-  bottom: 0.7rem;
-  right: 0.8rem;
+  bottom: 1.3rem;
+  right: 1.35rem;
 }
 
 .rank {
@@ -334,9 +334,10 @@
   font-family: "Cinzel Decorative", "Inter", serif;
   font-weight: 900;
   /* Sized with headroom for the widest glyph (Q's swash tail runs well past
-     its own layout box — normal font-metrics overshoot — and was reaching
-     the inset frame at the old, larger size). */
-  font-size: clamp(4.8rem, 25vw, 7.6rem);
+     its own layout box — normal font-metrics overshoot, worse on some
+     renderers than others — and was still crowding the inset frame at
+     4.8/25/7.6). */
+  font-size: clamp(4rem, 21vw, 6.4rem);
   line-height: 0.82;
   letter-spacing: 0;
 }
@@ -346,7 +347,7 @@
   z-index: 1;
   width: clamp(1.5rem, 6.5vw, 2.15rem);
   height: clamp(1.5rem, 6.5vw, 2.15rem);
-  margin-top: 0.2rem;
+  margin-top: 1.1rem;
 }
 
 .rule-text {

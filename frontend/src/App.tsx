@@ -537,12 +537,19 @@ export default function App() {
                 <p className="last-card-badge">Última carta antes de embaralhar!</p>
               )}
 
-              <PlayingCard
-                card={match.revealedCard}
-                revealed={!!match.revealedCard}
-                onReveal={canAct ? handleReveal : () => {}}
-                loading={loading || !canAct}
-              />
+              {/* Hidden (not just covered) while the turn-announce overlay is up —
+                  its unflip transition runs at the same moment, and 3D
+                  transform layers don't reliably respect z-index against 2D
+                  siblings on every browser (notably iOS Safari), so the flip
+                  could paint through the message instead of staying behind it. */}
+              <div style={turnAnnounce ? { visibility: "hidden" } : undefined}>
+                <PlayingCard
+                  card={match.revealedCard}
+                  revealed={!!match.revealedCard}
+                  onReveal={canAct ? handleReveal : () => {}}
+                  loading={loading || !canAct}
+                />
+              </div>
 
               {!canAct && !match.revealedCard && (
                 <p className="field-hint waiting-hint">Aguardando {match.currentPlayer?.name} jogar…</p>
