@@ -29,6 +29,9 @@ export interface MatchState {
   currentPlayer: Player | null;
   players: Player[];
   revealedCard: Card | null;
+  // Set when the revealed card's suit matches the previously drawn card's
+  // suit — the "combo de naipe" bonus (rule doubles for this turn).
+  comboSuit: Suit | null;
   houseRule: string | null;
   deck: { total: number; drawn: number };
   shotTimer: ShotTimer;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
-import type { MatchState } from "./api/types";
+import type { MatchState, Suit } from "./api/types";
 import { PlayingCard } from "./components/PlayingCard";
 import { HowToPlayModal } from "./components/HowToPlayModal";
 import { HostPanel } from "./components/HostPanel";
@@ -39,6 +39,13 @@ const AVATAR_COLORS: { bg: string; fg: string }[] = [
 function getAvatarColor(index: number): { bg: string; fg: string } {
   return AVATAR_COLORS[index % AVATAR_COLORS.length];
 }
+
+const SUIT_LABEL: Record<Suit, string> = {
+  hearts: "copas",
+  diamonds: "ouros",
+  clubs: "paus",
+  spades: "espadas",
+};
 
 const MAX_PLAYERS = 15;
 const POLL_INTERVAL_MS = 2000;
@@ -537,6 +544,14 @@ export default function App() {
                 <p className="last-card-badge">Última carta antes de embaralhar!</p>
               )}
 
+              {match.comboSuit && (
+                <div className="combo-strip">
+                  <span className={`combo-chip suit-${match.comboSuit}`}>
+                    2× {SUIT_LABEL[match.comboSuit]} seguidas
+                  </span>
+                </div>
+              )}
+
               {/* Hidden (not just covered) while the turn-announce overlay is up —
                   its unflip transition runs at the same moment, and 3D
                   transform layers don't reliably respect z-index against 2D
@@ -550,6 +565,12 @@ export default function App() {
                   loading={loading || !canAct}
                 />
               </div>
+
+              {match.comboSuit && (
+                <p className="combo-hint">
+                  Regra dobrada: quem bebeu na carta anterior bebe de novo.
+                </p>
+              )}
 
               {!canAct && !match.revealedCard && (
                 <p className="field-hint waiting-hint">Aguardando {match.currentPlayer?.name} jogar…</p>

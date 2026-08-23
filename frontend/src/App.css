@@ -485,6 +485,50 @@ button:disabled {
   margin: 0;
 }
 
+/* "Combo de naipe" — two same-suit reveals in a row. The chip's background
+   is the suit color itself (unlike last-card-badge's fixed ink), so the
+   bonus visibly ties back to whichever suit triggered it. */
+.combo-strip {
+  display: flex;
+  justify-content: center;
+}
+
+.combo-chip {
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 999px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.combo-chip.suit-hearts {
+  background: var(--suit-hearts);
+}
+
+.combo-chip.suit-spades {
+  background: var(--suit-spades);
+}
+
+.combo-chip.suit-diamonds {
+  background: var(--suit-diamonds);
+  color: var(--fg);
+}
+
+.combo-chip.suit-clubs {
+  background: var(--suit-clubs);
+}
+
+.combo-hint {
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin: -0.35rem 0 0;
+}
+
 .house-rule-form {
   display: flex;
   gap: 0.5rem;

@@ -69,6 +69,30 @@ async function loadMatchState(matchId: string) {
 
   const deckTotal = await prisma.matchDeckCard.count({ where: { matchId } });
   const deckDrawn = await prisma.matchDeckCard.count({ where: { matchId, drawn: true } });
+
+  // "Combo de naipe": true when the revealed card's suit matches the suit of
+  // the card drawn immediately before it. Derived from draw position instead
+  // of stored separately, so there's no extra state to keep in sync — the
+  // deck's own shuffle order is already the source of truth for "what came
+  // right before this one".
+  let comboSuit: string | null = null;
+  if (match.revealedCard) {
+    const currentDraw = await prisma.matchDeckCard.findFirst({
+      where: { matchId, cardId: match.revealedCard.id, drawn: true },
+      select: { position: true },
+    });
+    if (currentDraw) {
+      const previousDraw = await prisma.matchDeckCard.findFirst({
+        where: { matchId, drawn: true, position: { lt: currentDraw.position } },
+        orderBy: { position: "desc" },
+        include: { card: { select: { suit: true } } },
+      });
+      if (previousDraw && previousDraw.card.suit === match.revealedCard.suit) {
+        comboSuit = match.revealedCard.suit;
+      }
+    }
+  }
+
   const currentPlayer = match.players[match.currentPlayerIndex] ?? null;
   const pendingPlayer = match.players.find((p) => p.id === match.pendingShotPlayerId) ?? null;
   const remainingSeconds = match.shotTimerEndsAt
@@ -83,6 +107,7 @@ async function loadMatchState(matchId: string) {
     currentPlayer,
     players: match.players,
     revealedCard: match.revealedCard,
+    comboSuit,
     houseRule: match.houseRule,
     deck: { total: deckTotal, drawn: deckDrawn },
     // Seconds, not a timestamp — phone clocks routinely drift several
