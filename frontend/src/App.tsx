@@ -47,6 +47,13 @@ const SUIT_LABEL: Record<Suit, string> = {
   spades: "espadas",
 };
 
+const WAITING_ROOM_TIPS = [
+  "Você sabia? Se sair um Rei, todo mundo cria uma regra nova pra rodada.",
+  "Duas cartas seguidas do mesmo naipe dobram a regra — fica de olho.",
+  "A cada 3 minutos alguém é sorteado pro shot da rodada.",
+  "O baralho não repete carta — todas as 52 saem antes de embaralhar de novo.",
+];
+
 const MAX_PLAYERS = 15;
 const POLL_INTERVAL_MS = 2000;
 
@@ -76,10 +83,23 @@ export default function App() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [turnAnnounce, setTurnAnnounce] = useState<string | null>(null);
   const [displaySeconds, setDisplaySeconds] = useState<number | null>(null);
+  // Waiting-room polish: which player rows are still mid entrance-animation,
+  // and whether the just-clicked start button is mid flourish.
+  const [enteringPlayerIds, setEnteringPlayerIds] = useState<Set<number>>(new Set());
+  const [startFlourish, setStartFlourish] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
 
   const previousPlayerId = useRef<number | null>(null);
+  // Belt-and-suspenders against a double-tap firing two /reveal requests:
+  // `loading` alone has a gap between the tap and React re-rendering the
+  // disabled button, and this ref closes it synchronously, immediately.
+  const revealInFlight = useRef(false);
   const previousPendingShotId = useRef<number | null>(null);
   const joinInputRef = useRef<HTMLInputElement | null>(null);
+  // Every player id this device has already rendered once — used to detect
+  // which rows are new (and so should animate in) without replaying the
+  // entrance on every poll for players who were already in the room.
+  const seenPlayerIds = useRef<Set<number>>(new Set());
 
   // Resume an in-progress match if the link already has a code (shared link / refresh).
   useEffect(() => {
@@ -130,6 +150,37 @@ export default function App() {
     }
     previousPlayerId.current = currentId;
   }, [match?.currentPlayer?.id, match?.currentPlayer?.name]);
+
+  // Waiting-room entrance animation: fires once per player id, the first
+  // time this device ever renders it (covers both "just joined live" and
+  // "was already in the room when this device loaded the screen"). Ids
+  // already seen never replay it, so a 2s poll doesn't re-animate the whole
+  // roster every tick.
+  useEffect(() => {
+    if (!match) return;
+    const freshIds = match.players.map((p) => p.id).filter((id) => !seenPlayerIds.current.has(id));
+    if (freshIds.length === 0) return;
+    freshIds.forEach((id) => seenPlayerIds.current.add(id));
+    setEnteringPlayerIds((prev) => new Set([...prev, ...freshIds]));
+    const timer = setTimeout(() => {
+      setEnteringPlayerIds((prev) => {
+        const next = new Set(prev);
+        freshIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [match?.players]);
+
+  // Rotates the waiting-room tip every few seconds — only while it's
+  // actually on screen, so it's not silently ticking in the background.
+  useEffect(() => {
+    if (screen !== "players") return;
+    const interval = setInterval(() => {
+      setTipIndex((i) => (i + 1) % WAITING_ROOM_TIPS.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [screen]);
 
   // Shot-roulette alert: visibility is driven entirely by the server
   // (match.shotTimer.pendingPlayer), so every device shows/hides it in sync.
@@ -228,8 +279,15 @@ export default function App() {
     setLoading(true);
     setError(null);
     unlockAudio(); // real click, safe place to unlock for the shot timer later
+    setStartFlourish(true);
     try {
-      const state = await api.startMatch(match.code);
+      // Floors the button's flourish at ~450ms so it actually gets seen —
+      // a fast local response would otherwise cut to the game screen before
+      // the animation registers at all.
+      const [state] = await Promise.all([
+        api.startMatch(match.code),
+        new Promise((resolve) => setTimeout(resolve, 450)),
+      ]);
       previousPlayerId.current = state.currentPlayer?.id ?? null;
       previousPendingShotId.current = null;
       setMatch(state);
@@ -238,24 +296,28 @@ export default function App() {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      setStartFlourish(false);
     }
   }
 
   async function handleReveal() {
-    if (!match) return;
+    if (!match || revealInFlight.current) return;
+    revealInFlight.current = true;
     setLoading(true);
     setError(null);
     unlockAudio();
+    // Fires the instant the tap registers rather than after the round-trip —
+    // a real card flip doesn't wait for a server to confirm before it feels
+    // like something happened.
+    navigator.vibrate?.(60);
     try {
       const state = await api.revealCard(match.code, match.currentPlayer?.id);
       setMatch(state);
-      // Best-effort tactile feedback — iOS Safari has no Vibration API at
-      // all, so this silently no-ops there; Android Chrome picks it up.
-      navigator.vibrate?.(60);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+      revealInFlight.current = false;
     }
   }
 
@@ -294,6 +356,24 @@ export default function App() {
     } catch {
       setError("Não consegui copiar automaticamente — selecione o link manualmente.");
     }
+  }
+
+  // Opens the device's native share sheet (WhatsApp, Mensagens, etc.) when
+  // available — falls back to copy on desktop browsers and any share
+  // failure that isn't just the user dismissing the sheet.
+  async function handleShareLink() {
+    const url = window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Drink Game", text: "Entra na nossa partida!", url });
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          await handleCopyLink();
+        }
+      }
+      return;
+    }
+    await handleCopyLink();
   }
 
   async function handleKick(playerId: number) {
@@ -413,7 +493,10 @@ export default function App() {
               </div>
 
               {match.players.map((p) => (
-                <div className="player-row" key={p.id}>
+                <div
+                  className={`player-row ${enteringPlayerIds.has(p.id) ? "enter" : ""}`}
+                  key={p.id}
+                >
                   <span
                     className="avatar avatar-small"
                     style={{ background: getAvatarColor(p.turnOrder).bg, color: getAvatarColor(p.turnOrder).fg }}
@@ -435,6 +518,13 @@ export default function App() {
                   )}
                 </div>
               ))}
+
+              <p className={`status-line ${match.players.length >= 2 ? "ready" : ""}`}>
+                <span className="status-dot" aria-hidden="true" />
+                {match.players.length >= 2
+                  ? "Prontos pra começar!"
+                  : `Faltam pelo menos ${2 - match.players.length} pra começar`}
+              </p>
 
               <div className="player-row">
                 <label className="sr-only" htmlFor="join-name">
@@ -464,8 +554,18 @@ export default function App() {
                 <p className="field-hint">Sala cheia — máximo de {MAX_PLAYERS} jogadores.</p>
               )}
 
+              <p className="tip-card">
+                <span className="tip-text" key={tipIndex}>
+                  {WAITING_ROOM_TIPS[tipIndex]}
+                </span>
+              </p>
+
               {isHost(match.code) && (
-                <button disabled={loading || match.players.length < 2} onClick={handleStart}>
+                <button
+                  className={`start-btn ${startFlourish ? "flourish" : ""}`}
+                  disabled={loading || match.players.length < 2}
+                  onClick={handleStart}
+                >
                   {loading
                     ? "Iniciando…"
                     : match.players.length < 2
@@ -474,14 +574,24 @@ export default function App() {
                 </button>
               )}
 
-              {gameMode === "multiplayer" && (
-                <div className="link-hint">
-                  <code>{window.location.href}</code>
-                  <button type="button" onClick={handleCopyLink}>
-                    {linkCopied ? "Copiado!" : "Copiar link"}
-                  </button>
-                </div>
-              )}
+              {gameMode === "multiplayer" &&
+                (typeof navigator.share === "function" ? (
+                  <div className="link-hint">
+                    <button className="share-btn" type="button" onClick={handleShareLink}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14" />
+                      </svg>
+                      Compartilhar link
+                    </button>
+                  </div>
+                ) : (
+                  <div className="link-hint">
+                    <code>{window.location.href}</code>
+                    <button type="button" onClick={handleCopyLink}>
+                      {linkCopied ? "Copiado!" : "Copiar link"}
+                    </button>
+                  </div>
+                ))}
             </div>
           )}
 

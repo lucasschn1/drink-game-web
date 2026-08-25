@@ -133,7 +133,7 @@ export function PlayingCard({ card, revealed, onReveal, loading }: PlayingCardPr
     <div className="playing-card-scene">
       <button
         type="button"
-        className={`playing-card ${revealed ? "flipped" : ""}`}
+        className={`playing-card ${revealed ? "flipped" : ""} ${loading && !revealed ? "loading" : ""}`}
         onClick={!revealed ? onReveal : undefined}
         disabled={loading}
         aria-label={revealed ? undefined : "Revelar carta"}

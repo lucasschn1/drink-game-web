@@ -299,6 +299,158 @@ button:disabled {
   padding: 0.5rem 0.65rem;
 }
 
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.share-btn svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+/* --- waiting-room polish --- */
+
+/* A row only carries .enter for the ~600ms after it first appears to this
+   device (see the entrance-detection effect in App.tsx) — existing rows
+   never replay it on a poll refresh. */
+.player-row.enter {
+  animation: player-row-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes player-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0;
+}
+
+.status-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--suit-clubs);
+  animation: status-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes status-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.status-line.ready {
+  color: var(--fg);
+}
+
+.status-line.ready .status-dot {
+  background: var(--primary);
+  animation: none;
+  opacity: 1;
+}
+
+.tip-card {
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 4px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.tip-text {
+  display: block;
+  animation: tip-fade-in 0.4s ease;
+}
+
+@keyframes tip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Brief confirmation flourish on tap — floored to ~450ms in handleStart so
+   it has time to actually play before the screen switches to "game". */
+.start-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.start-btn.flourish {
+  animation: start-btn-shake 0.4s ease;
+}
+
+.start-btn.flourish::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55) 0%, transparent 65%);
+  animation: start-btn-burst 0.6s ease-out forwards;
+}
+
+@keyframes start-btn-shake {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes start-btn-burst {
+  from {
+    transform: scale(0);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-row.enter,
+  .status-dot,
+  .tip-text,
+  .start-btn.flourish,
+  .start-btn.flourish::after {
+    animation: none;
+  }
+}
+
 /* --- game --- */
 
 .game-header {

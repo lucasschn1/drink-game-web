@@ -63,6 +63,33 @@
   transition: transform 0.15s ease;
 }
 
+/* Keeps giving feedback for the whole network round-trip, not just the
+   instant the finger is down — :active alone lets go the moment the tap
+   releases, leaving a silent gap before the flip that read as "didn't
+   register" and prompted a second tap. */
+.playing-card.loading .playing-card-back {
+  animation: card-loading-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes card-loading-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.98);
+    opacity: 0.85;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playing-card.loading .playing-card-back {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 .playing-card.flipped {
   transform: rotateY(180deg);
 }
