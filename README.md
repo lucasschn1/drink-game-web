@@ -47,6 +47,8 @@ devolve. Uma ação (revelar carta, avançar turno) primeiro atualiza o próprio
 dispositivo de forma otimista com a resposta da sua chamada, e o polling dos
 outros dispositivos alcança em até ~2s.
 
+![Ana revela uma carta e recebe a resposta na hora; o celular de Bruno só descobre a mudança no próximo polling, até 2 segundos depois — os dois sempre reconciliados pelo mesmo estado gravado no MySQL, nunca um pelo outro.](docs/architecture.svg)
+
 Como consequência disso, o **backend não guarda nada em memória entre
 requisições** — nem sessão, nem timer, nem cache. Até o sorteio do shot
 roulette é resolvido com um `UPDATE` atômico condicional no MySQL
