@@ -8,6 +8,10 @@ Comecei como projeto pessoal e resolvi abrir o código. Se curtir a ideia e
 quiser ajudar a evoluir, tem um roteiro de issues de segurança e arquitetura
 esperando — é só mandar um PR.
 
+**🎮 Jogue agora:** [drink-game-web.lcordeiro183.workers.dev](https://drink-game-web.lcordeiro183.workers.dev)
+> Domínio provisório do Cloudflare Workers — a ideia é migrar pra um domínio
+> próprio mais pra frente.
+
 Dá pra jogar de duas formas:
 
 - **Local** — um celular só, passando de mão em mão.
