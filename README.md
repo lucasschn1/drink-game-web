@@ -1,8 +1,8 @@
 # Drink Game
 
 Jogo de cartas para festas com um baralho de 52 cartas de verdade — cada carta
-tem um desafio ligado ao valor (perguntas, rimas, categorias, regras da casa
-no Rei, e assim por diante).
+tem um desafio ligado ao valor (perguntas, categorias, regras da casa no Rei,
+e assim por diante).
 
 Comecei como projeto pessoal e resolvi abrir o código. Se curtir a ideia e
 quiser ajudar a evoluir, tem um roteiro de issues de segurança e arquitetura

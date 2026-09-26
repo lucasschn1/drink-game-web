@@ -16,7 +16,7 @@ const RULES_BY_RANK: Record<(typeof RANKS)[number], string> = {
   "6": "Dedinho — todos colocam o dedo na mesa; o último bebe.",
   "7": 'Jogo do Pi — conte em sequência, mas troque múltiplos de 3 e números terminados em 3 por "Pi". Quem errar, bebe.',
   "8": "Amarre-se a alguém até a próxima carta 8 sair.",
-  "9": "Rima — diga uma palavra; o próximo deve rimar. Quem travar, bebe.",
+  "9": "Mão fantasma — escolha uma mão; até o próximo 9, ninguém pode beber com ela. Quem esquecer, bebe.",
   "10": "Categoria — escolha uma categoria; cada jogador diz um item até alguém travar.",
   J: "C ou S — proibido falar palavras com C ou S. Quem falar, bebe.",
   Q: 'Só perguntas — só pode falar fazendo perguntas (estilo "Eu nunca?"). Quem responder direto, bebe.',
