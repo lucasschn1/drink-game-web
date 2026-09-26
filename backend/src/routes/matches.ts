@@ -32,6 +32,15 @@ function parityOf(rank: string): "par" | "impar" {
   return RANK_VALUE[rank] % 2 === 0 ? "par" : "impar";
 }
 
+// Vidência doesn't show up every turn — it's rolled fresh each time a turn
+// starts (roughly 1 in 3), so it stays a special moment instead of an extra
+// mandatory step on every single card.
+const VIDENCIA_CHANCE = 0.3;
+
+function rollVidenciaAvailable(): boolean {
+  return Math.random() < VIDENCIA_CHANCE;
+}
+
 // Match creation is the only endpoint with no natural rate limit from game
 // flow (reveal/advance are gated by clicks a few times per minute at most).
 // 20 per 15 min per IP is generous for real use, tight enough to stop a
@@ -152,6 +161,7 @@ async function loadMatchState(matchId: string) {
     comboSuit,
     houseRule: match.houseRule,
     deck: { total: deckTotal, drawn: deckDrawn },
+    videnciaAvailable: match.videnciaAvailable,
     videncia,
     handoff,
     // Seconds, not a timestamp — phone clocks routinely drift several
@@ -281,6 +291,7 @@ matchesRouter.post(
           revealedCardId: null,
           shotTimerEndsAt,
           pendingShotPlayerId: null,
+          videnciaAvailable: rollVidenciaAvailable(),
         },
       }),
     ]);
@@ -382,7 +393,7 @@ type VidenciaGuessOutcome =
   | "not_found"
   | "not_in_progress"
   | "forbidden"
-  | "invalid_guess"
+  | "not_available"
   | "already_revealed"
   | "already_guessed"
   | "ok";
@@ -409,14 +420,16 @@ matchesRouter.post(
           revealedCardId: number | null;
           currentPlayerIndex: number;
           pendingVidenciaGuess: string | null;
+          videnciaAvailable: number | boolean;
         }[]
       >`
-        SELECT status, revealedCardId, currentPlayerIndex, pendingVidenciaGuess
+        SELECT status, revealedCardId, currentPlayerIndex, pendingVidenciaGuess, videnciaAvailable
         FROM \`Match\` WHERE id = ${code} FOR UPDATE
       `;
       const locked = rows[0];
       if (!locked) return "not_found";
       if (locked.status !== "IN_PROGRESS") return "not_in_progress";
+      if (!locked.videnciaAvailable) return "not_available";
 
       const players = await tx.player.findMany({ where: { matchId: code }, orderBy: { turnOrder: "asc" } });
       const currentPlayer = players[locked.currentPlayerIndex];
@@ -432,6 +445,7 @@ matchesRouter.post(
     if (outcome === "not_found") return res.status(404).json({ error: "Match not found" });
     if (outcome === "not_in_progress") return res.status(409).json({ error: "Match is not in progress" });
     if (outcome === "forbidden") return res.status(403).json({ error: "Not your turn" });
+    if (outcome === "not_available") return res.status(409).json({ error: "Vidência isn't offered this turn" });
     if (outcome === "already_revealed") return res.status(409).json({ error: "Card already revealed this turn" });
     if (outcome === "already_guessed") return res.status(409).json({ error: "Already bet this turn" });
 
@@ -540,6 +554,8 @@ matchesRouter.post(
         // is *for* the player this turn is handing off to, so it must
         // survive this update and only clears via /videncia/acknowledge-handoff.
         pendingVidenciaGuess: null,
+        // Freshly rolled for the turn that's starting now.
+        videnciaAvailable: rollVidenciaAvailable(),
         // A house rule from a K only lasts "until the end of the round" —
         // clear it exactly when the round itself increments.
         ...(wrapped ? { houseRule: null } : {}),
@@ -647,7 +663,10 @@ matchesRouter.post(
         );
         await tx.match.update({
           where: { id: code },
-          data: { currentPlayerIndex: nextIndex, ...(wasCurrent ? { revealedCardId: null } : {}) },
+          data: {
+            currentPlayerIndex: nextIndex,
+            ...(wasCurrent ? { revealedCardId: null, videnciaAvailable: rollVidenciaAvailable() } : {}),
+          },
         });
       }
 

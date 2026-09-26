@@ -47,6 +47,9 @@ export interface MatchState {
   comboSuit: Suit | null;
   houseRule: string | null;
   deck: { total: number; drawn: number };
+  // Rolled once per turn — Vidência isn't offered on every card, only when
+  // this is true. Determines whether the bet prompt shows at all.
+  videnciaAvailable: boolean;
   // The current player's par/ímpar bet on this turn's card, and (once
   // revealed) whether it hit.
   videncia: VidenciaState | null;

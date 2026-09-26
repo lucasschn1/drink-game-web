@@ -43,6 +43,11 @@ model Match {
   // cleared only when they explicitly acknowledge it via
   // /videncia/acknowledge-handoff.
   handoffRuleText      String?
+  // Rolled once per turn (in /start, /advance, and the /kick successor
+  // path) — Vidência isn't offered on every card, just whenever this lands
+  // true. Kept on Match (not derived) so every device agrees on the same
+  // turn's roll instead of each client computing its own random answer.
+  videnciaAvailable    Boolean         @default(false)
   createdAt          DateTime        @default(now())
 
   players            Player[]

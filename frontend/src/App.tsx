@@ -449,7 +449,8 @@ export default function App() {
   // for *this* player's own turn only appears once they've acknowledged
   // whatever they inherited from the previous player's correct guess.
   const showingHandoff = canAct && !!match?.handoff;
-  const showingVidenciaPrompt = canAct && !match?.revealedCard && !showingHandoff;
+  const showingVidenciaPrompt =
+    canAct && !match?.revealedCard && !showingHandoff && !!match?.videnciaAvailable;
 
   return (
     <div className="app">
