@@ -21,19 +21,6 @@ export interface ShotTimer {
   pendingPlayer: Player | null;
 }
 
-export type VidenciaGuessValue = "par" | "impar";
-
-export interface VidenciaState {
-  guess: VidenciaGuessValue;
-  // null while the bet is placed but the card isn't revealed yet.
-  correct: boolean | null;
-}
-
-export interface VidenciaHandoff {
-  fromPlayerName: string;
-  ruleText: string;
-}
-
 export interface MatchState {
   code: string;
   status: MatchStatus;
@@ -47,15 +34,5 @@ export interface MatchState {
   comboSuit: Suit | null;
   houseRule: string | null;
   deck: { total: number; drawn: number };
-  // Rolled once per turn — Vidência isn't offered on every card, only when
-  // this is true. Determines whether the bet prompt shows at all.
-  videnciaAvailable: boolean;
-  // The current player's par/ímpar bet on this turn's card, and (once
-  // revealed) whether it hit.
-  videncia: VidenciaState | null;
-  // Set only for the player who just inherited the previous player's card
-  // (+ a shot) after that player guessed vidência correctly — cleared once
-  // they acknowledge it, before their own turn's reveal.
-  handoff: VidenciaHandoff | null;
   shotTimer: ShotTimer;
 }

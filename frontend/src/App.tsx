@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
-import type { MatchState, Suit, VidenciaGuessValue } from "./api/types";
+import type { MatchState, Suit } from "./api/types";
 import { PlayingCard } from "./components/PlayingCard";
 import { HowToPlayModal } from "./components/HowToPlayModal";
 import { HostPanel } from "./components/HostPanel";
@@ -334,32 +334,6 @@ export default function App() {
     }
   }
 
-  async function handleVidenciaGuess(guess: VidenciaGuessValue) {
-    if (!match) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setMatch(await api.guessVidencia(match.code, guess, match.currentPlayer?.id));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleAcknowledgeHandoff() {
-    if (!match) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setMatch(await api.acknowledgeHandoff(match.code, match.currentPlayer?.id));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleAdvance() {
     if (!match) return;
     setLoading(true);
@@ -445,12 +419,6 @@ export default function App() {
   const canAct = !!match && !!getTokenFor(match.code, match.currentPlayer?.id);
   const canAdvance = canAct || (!!match && isHost(match.code));
   const amHost = !!match && isHost(match.code);
-  // Showing the handoff interstitial takes priority — the vidência prompt
-  // for *this* player's own turn only appears once they've acknowledged
-  // whatever they inherited from the previous player's correct guess.
-  const showingHandoff = canAct && !!match?.handoff;
-  const showingVidenciaPrompt =
-    canAct && !match?.revealedCard && !showingHandoff && !!match?.videnciaAvailable;
 
   return (
     <div className="app">
@@ -641,24 +609,7 @@ export default function App() {
           )}
 
           {screen === "game" && match && (
-            <div className={`screen ${showingVidenciaPrompt ? "videncia-active" : ""}`}>
-              {showingVidenciaPrompt && (
-                <div className="mystic-glow" aria-hidden="true">
-                  <svg className="sparkle sparkle-a" viewBox="0 0 20 20">
-                    <path d="M10 1 L13 7 L19 10 L13 13 L10 19 L7 13 L1 10 L7 7 Z" fill="currentColor" />
-                  </svg>
-                  <svg className="sparkle sparkle-b" viewBox="0 0 20 20">
-                    <path d="M10 1 L13 7 L19 10 L13 13 L10 19 L7 13 L1 10 L7 7 Z" fill="currentColor" />
-                  </svg>
-                  <svg className="sparkle sparkle-c" viewBox="0 0 20 20">
-                    <path d="M10 1 L13 7 L19 10 L13 13 L10 19 L7 13 L1 10 L7 7 Z" fill="currentColor" />
-                  </svg>
-                  <svg className="sparkle sparkle-d" viewBox="0 0 20 20">
-                    <path d="M10 1 L13 7 L19 10 L13 13 L10 19 L7 13 L1 10 L7 7 Z" fill="currentColor" />
-                  </svg>
-                </div>
-              )}
-
+            <div className="screen">
               {turnAnnounce && (
                 <div className="turn-announce" role="status" aria-live="polite">
                   É a sua vez, {turnAnnounce}!
@@ -706,59 +657,6 @@ export default function App() {
                 <h2>Vez de {match.currentPlayer?.name}</h2>
               </div>
 
-              {showingHandoff && match.handoff && (
-                <div className="inherited">
-                  <p className="inherited-eyebrow">{match.handoff.fromPlayerName} acertou a vidência</p>
-                  <div className="inherited-rule">{match.handoff.ruleText}</div>
-                  <p className="inherited-extra">+ 1 shot extra</p>
-                  <button type="button" disabled={loading} onClick={handleAcknowledgeHandoff} style={{ width: "100%" }}>
-                    Continuar
-                  </button>
-                </div>
-              )}
-
-              {match.videncia && match.videncia.correct !== null && (
-                <p className={`videncia-result ${match.videncia.correct ? "hit" : "miss"}`}>
-                  {match.videncia.correct ? "Acertou — livre dessa carta" : "Errou a aposta"}
-                  <span className="detail">
-                    {match.videncia.correct
-                      ? "Passando pro próximo jogador…"
-                      : "Cumpre a regra da carta + 1 gole extra"}
-                  </span>
-                </p>
-              )}
-
-              {showingVidenciaPrompt && (
-                <div className="videncia-block">
-                  <p className="videncia-eyebrow">Vidência</p>
-                  {match.videncia ? (
-                    <>
-                      <p className="videncia-question">Aposta feita — toque na carta pra revelar.</p>
-                      <div className="videncia-toggle">
-                        <button type="button" className={match.videncia.guess === "par" ? "chosen" : ""} disabled>
-                          Par
-                        </button>
-                        <button type="button" className={match.videncia.guess === "impar" ? "chosen" : ""} disabled>
-                          Ímpar
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="videncia-question">A próxima carta vai ser par ou ímpar?</p>
-                      <div className="videncia-toggle">
-                        <button type="button" disabled={loading} onClick={() => handleVidenciaGuess("par")}>
-                          Par
-                        </button>
-                        <button type="button" disabled={loading} onClick={() => handleVidenciaGuess("impar")}>
-                          Ímpar
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-
               {match.houseRule && (
                 <div className="house-rule">
                   <strong>Regra da rodada:</strong> {match.houseRule}
@@ -777,26 +675,19 @@ export default function App() {
                 </div>
               )}
 
-              {/* Hidden entirely while a handoff is pending acknowledgement — the
-                  card underneath is always the back face at this point
-                  (revealedCard is null right after /advance), and letting it
-                  render tappable here would let this player skip straight
-                  past the "Continuar" step onto their own reveal.
-                  Hidden (not just covered) while the turn-announce overlay is up —
+              {/* Hidden (not just covered) while the turn-announce overlay is up —
                   its unflip transition runs at the same moment, and 3D
                   transform layers don't reliably respect z-index against 2D
                   siblings on every browser (notably iOS Safari), so the flip
                   could paint through the message instead of staying behind it. */}
-              {!showingHandoff && (
-                <div style={turnAnnounce ? { visibility: "hidden" } : undefined}>
-                  <PlayingCard
-                    card={match.revealedCard}
-                    revealed={!!match.revealedCard}
-                    onReveal={canAct ? handleReveal : () => {}}
-                    loading={loading || !canAct}
-                  />
-                </div>
-              )}
+              <div style={turnAnnounce ? { visibility: "hidden" } : undefined}>
+                <PlayingCard
+                  card={match.revealedCard}
+                  revealed={!!match.revealedCard}
+                  onReveal={canAct ? handleReveal : () => {}}
+                  loading={loading || !canAct}
+                />
+              </div>
 
               {match.comboSuit && (
                 <p className="combo-hint">

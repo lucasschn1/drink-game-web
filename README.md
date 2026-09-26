@@ -27,10 +27,6 @@ Dá pra jogar de duas formas:
   rodada vira).
 - **Combo de naipe** — quando duas cartas seguidas caem no mesmo naipe, a
   regra da carta atual dobra automaticamente (mostrado como um selo na tela).
-- **Vidência** — antes de revelar, o jogador da vez aposta se a carta vai ser
-  par ou ímpar. Acertou: fica livre da regra dessa carta, que passa junto com
-  um shot extra pro próximo jogador (mostrado antes da vez dele começar).
-  Errou: cumpre a regra normal da carta + 1 gole extra.
 - **Shot roulette** — a cada 3 minutos alguém é sorteado aleatoriamente pra
   dar um shot; o aviso aparece ao mesmo tempo em todos os celulares da
   partida, e qualquer um pode reconhecer pra reiniciar a contagem.
@@ -102,7 +98,7 @@ segurança abertas no repositório.
 backend/
   src/
     index.ts            # bootstrap do Express (CORS, JSON, error handler)
-    routes/matches.ts    # as 12 rotas da API + toda a lógica de jogo (ver nota abaixo)
+    routes/matches.ts    # as 9 rotas da API + toda a lógica de jogo (ver nota abaixo)
     lib/
       prisma.ts          # cliente Prisma (singleton)
       token.ts           # geração de token de jogador/host (crypto.randomBytes)
@@ -145,8 +141,6 @@ da resposta (exceto onde indicado):
 | `POST /:code/join` | Entra na sala com um nome, devolve o token do jogador | — |
 | `POST /:code/start` | Embaralha o baralho e começa a partida | host |
 | `POST /:code/reveal` | Sorteia a próxima carta pro jogador da vez | jogador da vez |
-| `POST /:code/videncia/guess` | Aposta par/ímpar antes de revelar a carta | jogador da vez |
-| `POST /:code/videncia/acknowledge-handoff` | Confirma que viu a regra + shot herdados de quem acertou a vidência antes dele | jogador da vez |
 | `POST /:code/house-rule` | Salva a regra da casa (carta = Rei) | jogador da vez |
 | `POST /:code/advance` | Passa a vez pro próximo jogador | jogador da vez ou host |
 | `POST /:code/shot/ack` | Reconhece o alerta de shot e reinicia o timer | qualquer um |

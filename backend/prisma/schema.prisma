@@ -32,22 +32,6 @@ model Match {
   // clients as a raw timestamp — see loadMatchState's clock-skew note.
   shotTimerEndsAt     DateTime?
   pendingShotPlayerId Int?
-  // Vidência: the current player's par/ímpar bet, made before revealing this
-  // turn's card. Cleared in /advance like revealedCardId — it only ever
-  // covers the turn currently in progress.
-  pendingVidenciaGuess String?
-  // Vidência hit handoff: set on the *match* (not the guesser) when a guess
-  // is correct, carrying the just-revealed card's rule text forward to
-  // whoever is current next. Survives /advance (unlike pendingVidenciaGuess)
-  // so the next player's client can show it before their own reveal, and is
-  // cleared only when they explicitly acknowledge it via
-  // /videncia/acknowledge-handoff.
-  handoffRuleText      String?
-  // Rolled once per turn (in /start, /advance, and the /kick successor
-  // path) — Vidência isn't offered on every card, just whenever this lands
-  // true. Kept on Match (not derived) so every device agrees on the same
-  // turn's roll instead of each client computing its own random answer.
-  videnciaAvailable    Boolean         @default(false)
   createdAt          DateTime        @default(now())
 
   players            Player[]
