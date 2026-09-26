@@ -15,6 +15,11 @@
   --suit-diamonds: #d6aa45;
   --suit-clubs: #718f72;
 
+  /* Not a suit color — the dedicated "signature" of the Vidência dynamic
+     (par/ímpar bet), used only for its background glow and label so the
+     moment reads as distinct from every other card in the deck. */
+  --mystic: #8a5fbf;
+
   color-scheme: light;
   color: var(--fg);
   background: var(--bg);

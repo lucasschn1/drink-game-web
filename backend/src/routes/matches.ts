@@ -10,6 +10,28 @@ export const matchesRouter = Router();
 const SHOT_TIMER_SECONDS = 180;
 const MAX_PLAYERS = 15;
 
+// Vidência: numeric value per rank, used only to settle the par/ímpar bet —
+// same ordering a 13-card suit run would use (A low, J/Q/K = 11/12/13).
+const RANK_VALUE: Record<string, number> = {
+  A: 1,
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5,
+  "6": 6,
+  "7": 7,
+  "8": 8,
+  "9": 9,
+  "10": 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+};
+
+function parityOf(rank: string): "par" | "impar" {
+  return RANK_VALUE[rank] % 2 === 0 ? "par" : "impar";
+}
+
 // Match creation is the only endpoint with no natural rate limit from game
 // flow (reveal/advance are gated by clicks a few times per minute at most).
 // 20 per 15 min per IP is generous for real use, tight enough to stop a
@@ -99,6 +121,26 @@ async function loadMatchState(matchId: string) {
     ? Math.max(0, Math.ceil((match.shotTimerEndsAt.getTime() - Date.now()) / 1000))
     : null;
 
+  // Vidência result is derived, not stored: correct is null until the card
+  // is actually revealed (guess made, waiting to flip), then settles to
+  // true/false by comparing the guess against the revealed card's parity.
+  const videncia = match.pendingVidenciaGuess
+    ? {
+        guess: match.pendingVidenciaGuess as "par" | "impar",
+        correct: match.revealedCard ? match.pendingVidenciaGuess === parityOf(match.revealedCard.rank) : null,
+      }
+    : null;
+
+  // Handoff: whoever guessed right last turn is always the player right
+  // before the current one in turn order — no need to store who it was.
+  const handoff = match.handoffRuleText
+    ? {
+        fromPlayerName:
+          match.players[(match.currentPlayerIndex - 1 + match.players.length) % match.players.length]?.name ?? "",
+        ruleText: match.handoffRuleText,
+      }
+    : null;
+
   return {
     code: match.id,
     status: match.status,
@@ -110,6 +152,8 @@ async function loadMatchState(matchId: string) {
     comboSuit,
     houseRule: match.houseRule,
     deck: { total: deckTotal, drawn: deckDrawn },
+    videncia,
+    handoff,
     // Seconds, not a timestamp — phone clocks routinely drift several
     // seconds from the server, so the client only ever counts down a
     // number it already has, resynced every poll.
@@ -263,9 +307,15 @@ matchesRouter.post(
 
     const outcome = await prisma.$transaction<RevealOutcome>(async (tx) => {
       const rows = await tx.$queryRaw<
-        { status: string; revealedCardId: number | null; currentPlayerIndex: number }[]
+        {
+          status: string;
+          revealedCardId: number | null;
+          currentPlayerIndex: number;
+          pendingVidenciaGuess: string | null;
+        }[]
       >`
-        SELECT status, revealedCardId, currentPlayerIndex FROM \`Match\` WHERE id = ${code} FOR UPDATE
+        SELECT status, revealedCardId, currentPlayerIndex, pendingVidenciaGuess
+        FROM \`Match\` WHERE id = ${code} FOR UPDATE
       `;
       const locked = rows[0];
       if (!locked) return "not_found";
@@ -298,7 +348,23 @@ matchesRouter.post(
       if (!next) return "deck_empty";
 
       await tx.matchDeckCard.update({ where: { id: next.id }, data: { drawn: true } });
-      await tx.match.update({ where: { id: code }, data: { revealedCardId: next.cardId } });
+
+      // Vidência settles right here: if the current player bet on this
+      // card's parity and guessed right, the card's rule stops being theirs
+      // to drink — it (plus an extra shot) carries forward to whoever is
+      // current after /advance, via handoffRuleText.
+      let handoffRuleText: string | null | undefined;
+      if (locked.pendingVidenciaGuess) {
+        const card = await tx.card.findUnique({ where: { id: next.cardId }, select: { rank: true, text: true } });
+        if (card && parityOf(card.rank) === locked.pendingVidenciaGuess) {
+          handoffRuleText = card.text;
+        }
+      }
+
+      await tx.match.update({
+        where: { id: code },
+        data: { revealedCardId: next.cardId, ...(handoffRuleText ? { handoffRuleText } : {}) },
+      });
       return "ok";
     });
 
@@ -306,6 +372,99 @@ matchesRouter.post(
     if (outcome === "not_in_progress") return res.status(409).json({ error: "Match is not in progress" });
     if (outcome === "forbidden") return res.status(403).json({ error: "Not your turn" });
     if (outcome === "deck_empty") return res.status(500).json({ error: "Deck is empty" });
+
+    const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);
+
+type VidenciaGuessOutcome =
+  | "not_found"
+  | "not_in_progress"
+  | "forbidden"
+  | "invalid_guess"
+  | "already_revealed"
+  | "already_guessed"
+  | "ok";
+
+// POST /api/matches/:code/videncia/guess — the current player bets on the
+// parity of the card they're about to reveal. Must happen before /reveal —
+// once a card's showing, the bet's moot (and /reveal itself trusts this
+// invariant, only ever checking pendingVidenciaGuess at draw time).
+matchesRouter.post(
+  "/:code/videncia/guess",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const token = getToken(req);
+    const guess: unknown = req.body?.guess;
+
+    if (guess !== "par" && guess !== "impar") {
+      return res.status(400).json({ error: "guess must be 'par' or 'impar'" });
+    }
+
+    const outcome = await prisma.$transaction<VidenciaGuessOutcome>(async (tx) => {
+      const rows = await tx.$queryRaw<
+        {
+          status: string;
+          revealedCardId: number | null;
+          currentPlayerIndex: number;
+          pendingVidenciaGuess: string | null;
+        }[]
+      >`
+        SELECT status, revealedCardId, currentPlayerIndex, pendingVidenciaGuess
+        FROM \`Match\` WHERE id = ${code} FOR UPDATE
+      `;
+      const locked = rows[0];
+      if (!locked) return "not_found";
+      if (locked.status !== "IN_PROGRESS") return "not_in_progress";
+
+      const players = await tx.player.findMany({ where: { matchId: code }, orderBy: { turnOrder: "asc" } });
+      const currentPlayer = players[locked.currentPlayerIndex];
+      if (!token || !currentPlayer || !currentPlayer.token || currentPlayer.token !== token) return "forbidden";
+
+      if (locked.revealedCardId) return "already_revealed";
+      if (locked.pendingVidenciaGuess) return "already_guessed";
+
+      await tx.match.update({ where: { id: code }, data: { pendingVidenciaGuess: guess } });
+      return "ok";
+    });
+
+    if (outcome === "not_found") return res.status(404).json({ error: "Match not found" });
+    if (outcome === "not_in_progress") return res.status(409).json({ error: "Match is not in progress" });
+    if (outcome === "forbidden") return res.status(403).json({ error: "Not your turn" });
+    if (outcome === "already_revealed") return res.status(409).json({ error: "Card already revealed this turn" });
+    if (outcome === "already_guessed") return res.status(409).json({ error: "Already bet this turn" });
+
+    const state = await loadMatchState(code);
+    res.json(state);
+  }),
+);
+
+// POST /api/matches/:code/videncia/acknowledge-handoff — the player who just
+// inherited a rule (+ shot) from the previous player's correct vidência
+// guess taps through it before their own turn starts. Only the current
+// player can dismiss their own handoff.
+matchesRouter.post(
+  "/:code/videncia/acknowledge-handoff",
+  asyncHandler(async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const token = getToken(req);
+
+    const match = await prisma.match.findUnique({
+      where: { id: code },
+      include: { players: { orderBy: { turnOrder: "asc" } } },
+    });
+    if (!match) return res.status(404).json({ error: "Match not found" });
+    if (match.status !== "IN_PROGRESS") {
+      return res.status(409).json({ error: "Match is not in progress" });
+    }
+
+    const currentPlayer = match.players[match.currentPlayerIndex];
+    if (!token || !currentPlayer || !currentPlayer.token || currentPlayer.token !== token) {
+      return res.status(403).json({ error: "Not your turn" });
+    }
+
+    await prisma.match.update({ where: { id: code }, data: { handoffRuleText: null } });
 
     const state = await loadMatchState(code);
     res.json(state);
@@ -377,6 +536,10 @@ matchesRouter.post(
         currentPlayerIndex: nextIndex,
         currentRound: wrapped ? match.currentRound + 1 : match.currentRound,
         revealedCardId: null,
+        // Scoped to the turn that just ended — unlike handoffRuleText, which
+        // is *for* the player this turn is handing off to, so it must
+        // survive this update and only clears via /videncia/acknowledge-handoff.
+        pendingVidenciaGuess: null,
         // A house rule from a K only lasts "until the end of the round" —
         // clear it exactly when the round itself increments.
         ...(wrapped ? { houseRule: null } : {}),

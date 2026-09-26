@@ -1,4 +1,4 @@
-import type { MatchState } from "./types";
+import type { MatchState, VidenciaGuessValue } from "./types";
 import { getHostToken, getTokenFor } from "../lib/identity";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
@@ -42,6 +42,19 @@ export const api = {
 
   revealCard: (code: string, currentPlayerId: number | undefined) =>
     request<MatchState>(`/matches/${code}/reveal`, {
+      method: "POST",
+      headers: authHeaders(getTokenFor(code, currentPlayerId)),
+    }),
+
+  guessVidencia: (code: string, guess: VidenciaGuessValue, currentPlayerId: number | undefined) =>
+    request<MatchState>(`/matches/${code}/videncia/guess`, {
+      method: "POST",
+      headers: authHeaders(getTokenFor(code, currentPlayerId)),
+      body: JSON.stringify({ guess }),
+    }),
+
+  acknowledgeHandoff: (code: string, currentPlayerId: number | undefined) =>
+    request<MatchState>(`/matches/${code}/videncia/acknowledge-handoff`, {
       method: "POST",
       headers: authHeaders(getTokenFor(code, currentPlayerId)),
     }),
