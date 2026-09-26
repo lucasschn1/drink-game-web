@@ -139,6 +139,19 @@ export default function App() {
     return () => clearInterval(interval);
   }, [screen, match?.code, loading, gameMode]);
 
+  // Non-host devices only learn the host started the match via the next poll
+  // response — this is what actually moves them off the waiting-room screen
+  // once match.status flips to IN_PROGRESS. (The host itself already jumps
+  // to "game" immediately in handleStart; this just keeps it in sync too.)
+  useEffect(() => {
+    if (!match) return;
+    if (match.status === "IN_PROGRESS" && screen === "players") {
+      previousPlayerId.current = match.currentPlayer?.id ?? null;
+      previousPendingShotId.current = null;
+      setScreen("game");
+    }
+  }, [match?.status, screen]);
+
   // Announce a new turn (but not on the very first render of the game screen).
   useEffect(() => {
     const currentId = match?.currentPlayer?.id ?? null;
